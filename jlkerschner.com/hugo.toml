@@ -1,4 +1,4 @@
-baseURL = 'https://jlkerschner.com/blog'
+baseURL = 'https://jlkerschner.com/'
 languageCode = 'en-us'
 title = 'Jay Kerschner'
 theme = 'wholelattesyntax'
