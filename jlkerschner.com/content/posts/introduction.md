@@ -3,8 +3,6 @@ title: "What to Write"
 date: 2024-12-27T15:42:03Z
 draft: false
 ---
-
-## Introduction
 Hi there, my name is Jay and this is my corner of the Internet.
 
 I’ll use this blog mainly as a dumping ground for things that are interesting to me and for documenting progress on projects, both personal and professional.
