@@ -1,0 +1,6 @@
+<section class="sidebar">
+    <h1>{{ site.Title }}</h1>
+    <!-- Replace with your avatar image, or leave as is -->
+    <img src="{{ "images/avatar.jpg" | absURL }}" class="avatar"></img>
+    {{ partial "menu.html" (dict "menuID" "main" "page" .) }}
+</section>

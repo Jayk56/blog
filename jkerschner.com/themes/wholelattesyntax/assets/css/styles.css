@@ -1,0 +1,123 @@
+/* Basic resets and font styling as you wish */
+body {
+    margin: 0;
+    font-family: sans-serif;
+}
+
+.container {
+    display: flex;
+    flex-direction: row;
+    height: 100vh;
+    /* optional, can remove if undesired */
+}
+
+/* --- SIDEBAR (blue section) --- */
+.sidebar {
+    flex: 0 0 40%;
+    /* ~40% of the width; adjust as needed */
+    background-color: #2171B5;
+    /* Light sky-blue or your choice */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    /* Centers elements horizontally */
+    padding: 2rem;
+    box-sizing: border-box;
+    color: #fff;
+    /* or a darker color for contrast */
+}
+
+.sidebar .avatar {
+    width: 240px;
+    height: 240px;
+    border-radius: 50%;
+    margin-bottom: 2rem;
+    background-image: url("/avatar.jpg");
+    background-size: cover;
+    background-position: center;
+}
+
+.sidebar h1 {
+    margin: 0;
+    margin-bottom: 2rem;
+    font-size: clamp(1.5rem, 2.5vw, 3rem);
+    /* Dynamically adjust the size */
+    text-align: center;
+    /* Center-align text */
+}
+
+.sidebar h2 {
+    margin: 0;
+    margin-bottom: 1.25rem;
+    font-size: clamp(1rem, 2.5vw, 2rem);
+    /* Dynamically adjust the size */
+    text-align: center;
+    /* Center-align text */
+}
+
+.sidebar nav ul {
+    list-style: none;
+    /* Removes bullet points */
+    padding: 0;
+    /* Removes default padding */
+    margin: 0;
+    /* Removes default margin */
+}
+
+.sidebar nav ul li {
+    margin-bottom: 1rem;
+    /* Space between each nav link */
+}
+
+.sidebar nav ul li a {
+    text-decoration: none;
+    /* Removes underline */
+    color: #fff;
+    /* Matches sidebar text color */
+    font-weight: bold;
+    /* Emphasizes links */
+}
+
+.sidebar nav ul li a:hover {
+    text-decoration: underline;
+    /* Adds underline on hover */
+}
+
+/* --- MAIN CONTENT AREA --- */
+.content {
+    flex: 0 0 40%;
+    /* ~40%; adjust as needed */
+    padding: 2rem;
+    box-sizing: border-box;
+    background-color: #fff;
+    color: #333;
+}
+
+/* Basic styling for posts */
+.post {
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #ccc;
+    /* separator between each post */
+}
+
+/* --- RIGHT SPACE (empty area) --- */
+.right-space {
+    flex: 0 0 20%;
+    /* ~20% of the width; adjust as needed for 1/4–1/6 space */
+    background-color: #f5f5f5;
+    /* or keep white, or your preference */
+}
+
+/* --- HEADER / FOOTER --- */
+.site-header,
+.site-footer {
+    padding: 1rem 2rem;
+    background-color: #222;
+    color: #fff;
+}
+
+.site-header h1,
+.site-footer p {
+    margin: 0;
+}
