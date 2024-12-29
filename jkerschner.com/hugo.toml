@@ -2,3 +2,8 @@ baseURL = 'https://jkerschner.com/'
 languageCode = 'en-us'
 title = 'Jay Kerschner'
 theme = 'wholelattesyntax'
+
+[markup]
+  [markup.highlight]
+    noClasses = false
+    style = "monokai"
