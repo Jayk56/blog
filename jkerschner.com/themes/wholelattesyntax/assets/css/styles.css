@@ -4,6 +4,16 @@ body {
     font-family: sans-serif;
 }
 
+h1 {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+}
+
+h2 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+}
+
 .container {
     display: flex;
     flex-direction: row;
@@ -87,7 +97,6 @@ body {
 /* --- MAIN CONTENT AREA --- */
 .content {
     flex: 0 0 50%;
-    /* ~40%; adjust as needed */
     padding: 2rem;
     box-sizing: border-box;
     background-color: #fff;
@@ -185,6 +194,29 @@ body {
     .mobile-menu nav ul li a:hover {
         text-decoration: underline;
     }
+}
+
+pre code {
+    white-space: pre-wrap;
+    /* CSS3 */
+    white-space: -moz-pre-wrap;
+    /* Firefox */
+    white-space: -pre-wrap;
+    /* Opera <7 */
+    white-space: -o-pre-wrap;
+    /* Opera 7 */
+    word-wrap: break-word;
+    /* IE */
+
+
+}
+
+.highlight {
+    /* Optional styling */
+    background-color: #f4ecd8;
+    /* Sepia background color */
+    padding: 10px;
+    border-radius: 5px;
 }
 
 /* Single post layout - if needed to be different */
