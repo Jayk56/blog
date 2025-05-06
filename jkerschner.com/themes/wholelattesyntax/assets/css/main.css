@@ -1,0 +1,194 @@
+/*  HERO & any other in‑content images  */
+.post-content img,
+.post-body img
+{
+  max-width: 100%;   /* never overflow the column */
+  height: auto;      /* keep the aspect‑ratio */
+  display: block;    /* removes the tiny gap under inline images */
+  margin: 0 auto;    /* centred in narrower columns */
+}
+
+/*  If your theme shows the hero on the list page too  */
+.post-card img,
+.post-excerpt img,
+.content img {
+  width: 100%;
+  height: auto;
+  object-fit: cover; /* fills the box without distortion (optional) */
+}
+
+/* Outputs grid for AI explainers */
+.outputs-grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(1, 1fr);
+  margin: 2rem 0;
+}
+
+/* Mobile-first styling - smaller cards on mobile */
+.output-card {
+  background-color: rgba(238, 242, 255, 0.6); /* indigo-50 with 60% opacity */
+  border-radius: 0.75rem; /* rounded-xl */
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); /* shadow-md */
+  padding: 0.75rem; /* Reduced padding for mobile */
+  text-decoration: none;
+  color: inherit;
+  transition: all 0.2s ease-in-out; /* transition */
+  aspect-ratio: 2 / 1; /* Half height on mobile */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.output-card:hover {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* hover:shadow-lg */
+  transform: translateY(-2px);
+}
+
+.card-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  text-align: center;
+  gap: 0.5rem; /* Reduced gap for mobile */
+}
+
+.card-label {
+  font-size: 1rem; /* Smaller font on mobile */
+  font-weight: 600;
+  color: #003eaa; /* fbc-blue-70 */
+}
+
+.card-cta {
+  font-size: 0.8rem; /* Smaller font on mobile */
+  color: #0060df; /* fbc-blue-60 */
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-weight: 500;
+}
+
+.external-icon {
+  font-size: 0.9em;
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+
+.output-card:hover .external-icon {
+  transform: translate(2px, -2px);
+}
+
+/* Modal popup */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  z-index: 9999;
+  justify-content: center;
+  align-items: center;
+  padding: 1rem;
+}
+
+.modal-container {
+  background: #fff;
+  border-radius: 0.5rem;
+  width: 90%;
+  max-width: 1200px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 5px 30px rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #eee;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+#modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #666;
+}
+
+#modal-close:hover {
+  color: #000;
+}
+
+.modal-content {
+  flex-grow: 1;
+  overflow: hidden;
+}
+
+#modal-iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  min-height: 70vh;
+}
+
+/* Responsive grid - adjust back to square tiles for larger screens */
+@media (min-width: 768px) {
+  .outputs-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  
+  .output-card {
+    aspect-ratio: 1 / 1; /* Square on desktop */
+    padding: 1rem; /* Original padding for desktop */
+  }
+  
+  .card-content {
+    gap: 1rem; /* Original gap for desktop */
+  }
+  
+  .card-label {
+    font-size: 1.25rem; /* Original font size for desktop */
+  }
+  
+  .card-cta {
+    font-size: 0.9rem; /* Original font size for desktop */
+  }
+}
+
+@media (min-width: 600px) and (max-width: 767px) {
+  .outputs-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .output-card {
+    aspect-ratio: 1 / 1; /* Square on tablet */
+    padding: 1rem; /* Original padding for tablet */
+  }
+  
+  .card-content {
+    gap: 1rem; /* Original gap for tablet */
+  }
+  
+  .card-label {
+    font-size: 1.25rem; /* Original font size for tablet */
+  }
+  
+  .card-cta {
+    font-size: 0.9rem; /* Original font size for tablet */
+  }
+}
