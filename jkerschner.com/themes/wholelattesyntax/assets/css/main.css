@@ -46,6 +46,11 @@
   transform: translateY(-2px);
 }
 
+.card-cta:hover {
+  background-color: #0250bc; /* Darker shade on hover */
+  transform: scale(1.05); /* Subtle grow effect */
+}
+
 .card-content {
   display: flex;
   flex-direction: column;
@@ -65,12 +70,20 @@
 
 .card-cta {
   font-size: 0.8rem; /* Smaller font on mobile */
-  color: #0060df; /* fbc-blue-60 */
+  color: #ffffff; /* White text for better contrast */
+  background-color: #0060df; /* fbc-blue-60 as background */
   margin-top: auto;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.25rem;
   font-weight: 500;
+  padding: 1rem; /* Adding padding to increase click surface */
+  border-radius: 0.375rem; /* Rounded corners */
+  transition: background-color 0.2s ease; /* Smooth transition for hover effect */
+  width: 100%; /* Full width of parent to increase clickable area */
+  max-width: 220px; /* Limit maximum width */
+  cursor: pointer; /* Indicate it's clickable */
 }
 
 .external-icon {
@@ -167,6 +180,8 @@
   
   .card-cta {
     font-size: 0.9rem; /* Original font size for desktop */
+    padding: 0.75rem; /* Larger padding on desktop */
+    max-width: 200px; /* Slightly larger max-width on desktop */
   }
 }
 
@@ -190,5 +205,7 @@
   
   .card-cta {
     font-size: 0.9rem; /* Original font size for tablet */
+    padding: 0.6rem 1.2rem; /* Medium padding for tablet */
+    max-width: 190px; /* Medium max-width for tablet */
   }
 }

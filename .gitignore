@@ -7,6 +7,37 @@ _site/
 .jekyll-cache/
 .jekyll-metadata
 
+# Hugo specific ignores
+# Hugo will create a public directory for the static site
+# This is the default output directory for Hugo
+# If you are using a different output directory, change this line
+public/
+# Hugo will create a cache directory for the static site
+# This is the default cache directory for Hugo
+# If you are using a different cache directory, change this line
+cache/
+# Hugo will create a resources directory for the static site
+# This is the default resources directory for Hugo
+# If you are using a different resources directory, change this line
+resources/
+# Hugo will create a vendor directory for the static site
+# This is the default vendor directory for Hugo
+# If you are using a different vendor directory, change this line
+vendor/
+# Hugo will create a modules directory for the static site
+# This is the default modules directory for Hugo
+# If you are using a different modules directory, change this line
+modules/
+# Hugo will create a themes directory for the static site
+# This is the default themes directory for Hugo
+# If you are using a different themes directory, change this line
+# themes/
+# Hugo will create a config.toml file for the static site
+# This is the default config.toml file for Hugo
+# If you are using a different config.toml file, change this line
+config.toml
+
+
 # Additional Ruby/bundler ignore for when you run: bundle install
 /vendor
 
