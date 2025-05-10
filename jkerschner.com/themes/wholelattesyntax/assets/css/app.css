@@ -1,0 +1,611 @@
+/* filepath: /workspaces/blog/jkerschner.com/themes/wholelattesyntax/assets/css/main.css */
+/*  HERO & any other in‑content images  */
+.post-content img,
+.post-body img
+{
+  max-width: 100%;   /* never overflow the column */
+  height: auto;      /* keep the aspect‑ratio */
+  display: block;    /* removes the tiny gap under inline images */
+  margin: 0 auto;    /* centred in narrower columns */
+}
+
+/*  If your theme shows the hero on the list page too  */
+.post-card img,
+.post-excerpt img,
+.content img {
+  width: 100%;
+  height: auto;
+  object-fit: cover; /* fills the box without distortion (optional) */
+}
+
+/* Outputs grid for AI explainers */
+.outputs-grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(1, 1fr);
+  margin: 2rem 0;
+}
+
+/* Mobile-first styling - smaller cards on mobile */
+.output-card {
+  background-color: rgba(238, 242, 255, 0.6); /* indigo-50 with 60% opacity */
+  border-radius: 0.75rem; /* rounded-xl */
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); /* shadow-md */
+  padding: 0.75rem; /* Reduced padding for mobile */
+  text-decoration: none;
+  color: inherit;
+  transition: all 0.2s ease-in-out; /* transition */
+  aspect-ratio: 2 / 1; /* Half height on mobile */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.output-card:hover {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* hover:shadow-lg */
+  transform: translateY(-2px);
+}
+
+.card-cta:hover {
+  background-color: #0250bc; /* Darker shade on hover */
+  transform: scale(1.05); /* Subtle grow effect */
+}
+
+.card-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  text-align: center;
+  gap: 0.5rem; /* Reduced gap for mobile */
+}
+
+.card-label {
+  font-size: 1rem; /* Smaller font on mobile */
+  font-weight: 600;
+  color: #003eaa; /* fbc-blue-70 */
+}
+
+.card-cta {
+  font-size: 0.8rem; /* Smaller font on mobile */
+  color: #ffffff; /* White text for better contrast */
+  background-color: #0060df; /* fbc-blue-60 as background */
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  font-weight: 500;
+  padding: 1rem; /* Adding padding to increase click surface */
+  border-radius: 0.375rem; /* Rounded corners */
+  transition: background-color 0.2s ease; /* Smooth transition for hover effect */
+  width: 100%; /* Full width of parent to increase clickable area */
+  max-width: 220px; /* Limit maximum width */
+  cursor: pointer; /* Indicate it's clickable */
+}
+
+.external-icon {
+  font-size: 0.9em;
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+
+.output-card:hover .external-icon {
+  transform: translate(2px, -2px);
+}
+
+/* Modal popup */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  z-index: 9999;
+  justify-content: center;
+  align-items: center;
+  padding: 1rem;
+}
+
+.modal-container {
+  background: #fff;
+  border-radius: 0.5rem;
+  width: 90%;
+  max-width: 1200px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 5px 30px rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #eee;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+#modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #666;
+}
+
+#modal-close:hover {
+  color: #000;
+}
+
+.modal-content {
+  flex-grow: 1;
+  overflow: hidden;
+}
+
+#modal-iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  min-height: 70vh;
+}
+
+/* Responsive grid - adjust back to square tiles for larger screens */
+@media (min-width: 768px) {
+  .outputs-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  
+  .output-card {
+    aspect-ratio: 1 / 1; /* Square on desktop */
+    padding: 1rem; /* Original padding for desktop */
+  }
+  
+  .card-content {
+    gap: 1rem; /* Original gap for desktop */
+  }
+  
+  .card-label {
+    font-size: 1.25rem; /* Original font size for desktop */
+  }
+  
+  .card-cta {
+    font-size: 0.9rem; /* Original font size for desktop */
+    padding: 0.75rem; /* Larger padding on desktop */
+    max-width: 200px; /* Slightly larger max-width on desktop */
+  }
+}
+
+@media (min-width: 600px) and (max-width: 767px) {
+  .outputs-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .output-card {
+    aspect-ratio: 1 / 1; /* Square on tablet */
+    padding: 1rem; /* Original padding for tablet */
+  }
+  
+  .card-content {
+    gap: 1rem; /* Original gap for tablet */
+  }
+  
+  .card-label {
+    font-size: 1.25rem; /* Original font size for tablet */
+  }
+  
+  .card-cta {
+    font-size: 0.9rem; /* Original font size for tablet */
+    padding: 0.6rem 1.2rem; /* Medium padding for tablet */
+    max-width: 190px; /* Medium max-width for tablet */
+  }
+}
+
+/* filepath: /workspaces/blog/jkerschner.com/themes/wholelattesyntax/assets/css/styles.css */
+/* Basic resets and font styling as you wish */
+body {
+    margin: 0;
+    font-family: sans-serif;
+}
+
+h1 {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+}
+
+h2 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.container {
+    display: flex;
+    flex-direction: row;
+    height: 100vh;
+    /* optional, can remove if undesired */
+}
+
+/* --- SIDEBAR (blue section) --- */
+.sidebar {
+    width: 30%;
+    background-color: #2171B5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    /* Centers elements horizontally */
+    padding: 2rem;
+    box-sizing: border-box;
+    color: #fff;
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    overflow: auto;
+}
+
+.sidebar .avatar {
+    width: 240px;
+    height: 240px;
+    border-radius: 50%;
+    margin-bottom: 2rem;
+    background-size: cover;
+    background-position: center;
+}
+
+.sidebar h1 {
+    margin: 0;
+    margin-bottom: 2rem;
+    font-size: clamp(1.5rem, 2.5vw, 3rem);
+    /* Dynamically adjust the size */
+    text-align: center;
+    /* Center-align text */
+    color: #ffffff; /* Ensure the text is white */
+}
+
+.sidebar h2 {
+    margin: 0;
+    margin-bottom: 1.25rem;
+    font-size: clamp(1rem, 2.5vw, 2rem);
+    /* Dynamically adjust the size */
+    text-align: center;
+    /* Center-align text */
+}
+
+.sidebar nav ul {
+    list-style: none;
+    /* Removes bullet points */
+    padding: 0;
+    /* Removes default padding */
+    margin: 0;
+    /* Removes default margin */
+}
+
+.sidebar nav ul li {
+    margin-bottom: 1rem;
+    /* Space between each nav link */
+}
+
+.sidebar nav ul li a {
+    text-decoration: none;
+    /* Removes underline */
+    color: #fff;
+    /* Matches sidebar text color */
+    font-weight: bold;
+    /* Emphasizes links */
+}
+
+.sidebar nav ul li a:hover {
+    text-decoration: underline;
+    /* Adds underline on hover */
+}
+
+/* --- MAIN CONTENT AREA --- */
+.content {
+    flex: 0 0 50%;
+    padding: 2rem;
+    box-sizing: border-box;
+    background-color: #fff;
+    color: #333;
+    overflow-y: auto;
+    margin-left: 30%;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+/* Basic styling for posts */
+.post {
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #ccc;
+    /* separator between each post */
+}
+
+/* --- RIGHT SPACE (empty area) --- */
+.right-space {
+    /* ~20% of the width; adjust as needed for 1/4–1/6 space */
+    width: 20%;
+}
+
+/* --- HEADER / FOOTER --- */
+
+.site-footer {
+    margin-top: auto;
+    padding-top: 2rem;
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Hide sidebar/right-space on small screens, show topbar instead */
+.topbar {
+    display: none;
+    /* Additional styling as needed */
+}
+
+@media (max-width: 768px) {
+
+    .sidebar,
+    .right-space {
+        display: none;
+    }
+
+    .container {
+        margin-left: 0;
+        flex-direction: column;
+    }
+
+    .content {
+        margin-left: 0;
+        flex: 1;
+    }
+
+    .mobile-menu {
+        display: flex;
+        gap: 1rem;
+        list-style: none;
+        width: 100%;
+    }
+
+    .mobile-menu nav {
+        display: flex;
+        justify-content: space-between;
+        width: 100%;
+        padding: 1rem;
+        background-color: #2171B5;
+        color: #fff;
+    }
+
+    .mobile-menu nav ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        width: 100%;
+        justify-content: space-around;
+    }
+
+    .mobile-menu nav ul li {
+        flex: 1;
+        text-align: center;
+    }
+
+    .mobile-menu nav ul li a {
+        text-decoration: none;
+        color: #fff;
+        font-weight: bold;
+    }
+
+    .mobile-menu nav ul li a:hover {
+        text-decoration: underline;
+    }
+}
+
+pre code {
+    white-space: pre-wrap;
+    /* CSS3 */
+    white-space: -moz-pre-wrap;
+    /* Firefox */
+    white-space: -pre-wrap;
+    /* Opera <7 */
+    white-space: -o-pre-wrap;
+    /* Opera 7 */
+    word-wrap: break-word;
+    /* IE */
+
+
+}
+
+/* Container for the entire post */
+.bluesky-post {
+  width: 100%;
+  max-width: 600px;
+  margin: 1rem auto;
+  padding: 0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  background: #fff;
+  overflow: hidden;
+} 
+
+/* Header with avatar and author info */
+.bluesky-post header {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem;
+}
+.bluesky-post header img {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  margin-right: 0.75rem;
+  display: block;
+}
+
+/* Main text content */
+.bluesky-post .content {
+  padding: 0 0.75rem 0.75rem;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+/* External embed (link preview, gallery, etc.) */
+.bluesky-post .external-embed {
+  display: block;
+  border-top: 1px solid #eee;
+  text-decoration: none;
+  color: inherit;
+}
+.bluesky-post .external-embed img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Timestamp footer */
+.bluesky-post footer {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  color: #666;
+}
+
+.highlight {
+    /* Optional styling */
+    background-color: #f4ecd8;
+    /* Sepia background color */
+    padding: 10px;
+    border-radius: 5px;
+}
+
+.bsky-embed-wrapper {
+  width: 100%;
+  max-width: 600px;
+  margin: auto;
+  overflow: hidden;
+  border-radius: 1rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  background: var(--bsky-bg, #fff);
+  border: 1px solid var(--bsky-border, #ddd);
+}
+
+.bsky-embed-wrapper iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+/* Single post layout - if needed to be different */
+/* .single-post .sidebar {
+}
+
+.single-post .content {
+}
+
+.single-post .right-space {
+} */
+
+/* Alert Shortcode Styling */
+.alert {
+  padding: 1.25rem 1.25rem 1.25rem 2.75rem;
+  margin: 1.5rem 0;
+  border-left: 4px solid transparent;
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  font-size: 1.05rem;
+  line-height: 1.6;
+  position: relative;
+  overflow: hidden;
+}
+
+.alert::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0.75rem;
+  transform: translateY(-50%);
+  width: 1.25rem;
+  height: 1.25rem;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.alert-note {
+  color: #0c5460;
+  background-color: #f0f9fb;
+  border-left-color: #17a2b8;
+}
+
+.alert-note::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='%2317a2b8' d='M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10zm0-2a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm-1-5h2v2h-2v-2zm0-8h2v6h-2V7z'/%3E%3C/svg%3E");
+}
+
+.alert-warning {
+  color: #856404;
+  background-color: #fff9e6;
+  border-left-color: #ffc107;
+}
+
+.alert-warning::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='%23ffc107' d='M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10zm-1-7v2h2v-2h-2zm0-8v6h2V7h-2z'/%3E%3C/svg%3E");
+}
+
+.alert-danger {
+  color: #721c24;
+  background-color: #fff5f5;
+  border-left-color: #dc3545;
+}
+
+.alert-danger::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='%23dc3545' d='M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10zm-1-7v2h2v-2h-2zm0-8v6h2V7h-2z'/%3E%3C/svg%3E");
+}
+
+.alert-success {
+  color: #155724;
+  background-color: #f4fbf6;
+  border-left-color: #28a745;
+}
+
+.alert-success::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='%2328a745' d='M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10zm-.997-6l7.07-7.071-1.414-1.414-5.656 5.657-2.829-2.829-1.414 1.414L11.003 16z'/%3E%3C/svg%3E");
+}
+
+.alert-info {
+  color: #004085;
+  background-color: #f5faff;
+  border-left-color: #007bff;
+}
+
+.alert-info::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='%23007bff' d='M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10zm-1-11v6h2v-6h-2zm0-4v2h2V7h-2z'/%3E%3C/svg%3E");
+}
+
+/* Responsive adjustments for alerts */
+@media (max-width: 768px) {
+  .alert {
+    padding: 1rem 1rem 1rem 2.5rem;
+    font-size: 1rem;
+    margin: 1.25rem 0;
+  }
+  
+  .alert::before {
+    top: 50%;
+    transform: translateY(-50%);
+    left: 0.75rem;
+    width: 1rem;
+    height: 1rem;
+    background-size: cover;
+  }
+}

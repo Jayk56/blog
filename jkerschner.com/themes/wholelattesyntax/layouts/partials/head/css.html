@@ -1,19 +1,39 @@
-{{- with resources.Get "css/main.css" }}
+{{- with resources.Get "css/app.css" -}}
 {{- if eq hugo.Environment "development" }}
 <link rel="stylesheet" href="{{ .RelPermalink }}">
 {{- else }}
-{{- with . | minify | fingerprint }}
+{{- with . | minify | fingerprint -}}
 <link rel="stylesheet" href="{{ .RelPermalink }}" integrity="{{ .Data.Integrity }}" crossorigin="anonymous">
-{{- end }}
-{{- end }}
-{{- end }}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 
-{{- with resources.Get "css/styles.css" }}
+{{- with resources.Get "css/typography.css" -}}
 {{- if eq hugo.Environment "development" }}
 <link rel="stylesheet" href="{{ .RelPermalink }}">
 {{- else }}
-{{- with . | minify | fingerprint }}
+{{- with . | minify | fingerprint -}}
 <link rel="stylesheet" href="{{ .RelPermalink }}" integrity="{{ .Data.Integrity }}" crossorigin="anonymous">
-{{- end }}
-{{- end }}
-{{- end }}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- with resources.Get "css/blog-enhanced.css" -}}
+{{- if eq hugo.Environment "development" }}
+<link rel="stylesheet" href="{{ .RelPermalink }}">
+{{- else }}
+{{- with . | minify | fingerprint -}}
+<link rel="stylesheet" href="{{ .RelPermalink }}" integrity="{{ .Data.Integrity }}" crossorigin="anonymous">
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- with resources.Get "css/alerts.css" -}}
+{{- if eq hugo.Environment "development" }}
+<link rel="stylesheet" href="{{ .RelPermalink }}">
+{{- else }}
+{{- with . | minify | fingerprint -}}
+<link rel="stylesheet" href="{{ .RelPermalink }}" integrity="{{ .Data.Integrity }}" crossorigin="anonymous">
+{{- end -}}
+{{- end -}}
+{{- end -}}
