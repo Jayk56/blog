@@ -6,9 +6,32 @@
   {{ end }}
 
   {{ $posts := where site.RegularPages "Type" "posts" }}
+  {{ $pinned := first 1 (where $posts "File.BaseFileName" "introduction") }}
+
+  {{ if gt (len $pinned) 0 }}
+  {{ $p := index $pinned 0 }}
+  <section class="post-list">
+    <article class="post-card">
+      <span class="post-card__pin" aria-hidden="true"></span>
+      <div class="post-card__meta">
+        <span>Introduction</span>
+        {{ if gt $p.ReadingTime 0 }}<span>{{ $p.ReadingTime }} min read</span>{{ end }}
+      </div>
+      <h3 class="post-card__title">
+        <a href="{{ $p.RelPermalink }}">{{ $p.Title }}</a>
+      </h3>
+      {{ with $p.Summary }}
+      <p class="post-card__excerpt">{{ . | plainify | truncate 200 }}</p>
+      {{ end }}
+      <a class="post-card__link" href="{{ $p.RelPermalink }}">Read post</a>
+    </article>
+  </section>
+  {{ end }}
+
   <section class="post-list">
     <h2>Latest posts</h2>
-    {{ range first 6 $posts.ByDate.Reverse }}
+    {{ $latest := where $posts "File.BaseFileName" "ne" "introduction" }}
+    {{ range first 3 $latest.ByDate.Reverse }}
     <article class="post-card">
       <div class="post-card__meta">
         <span>Published {{ .Date.Format "Jan 2, 2006" }}</span>
@@ -23,5 +46,6 @@
       <a class="post-card__link" href="{{ .RelPermalink }}">Read post</a>
     </article>
     {{ end }}
+    <a class="post-list__cta" href="/posts/">View more posts</a>
   </section>
 {{ end }}
