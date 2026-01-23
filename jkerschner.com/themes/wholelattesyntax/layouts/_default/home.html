@@ -1,7 +1,27 @@
 {{ define "main" }}
-  {{ .Content }}
-  {{ range site.RegularPages }}
-    <h2><a href="{{ .RelPermalink }}">{{ .LinkTitle }}</a></h2>
-    {{ .Summary }}
+  {{ with .Content }}
+  <section class="home-intro">
+    {{ . }}
+  </section>
   {{ end }}
+
+  {{ $posts := where site.RegularPages "Type" "posts" }}
+  <section class="post-list">
+    <h2>Latest posts</h2>
+    {{ range first 6 $posts.ByDate.Reverse }}
+    <article class="post-card">
+      <div class="post-card__meta">
+        <span>Published {{ .Date.Format "Jan 2, 2006" }}</span>
+        {{ with .ReadingTime }}<span>{{ . }} min read</span>{{ end }}
+      </div>
+      <h3 class="post-card__title">
+        <a href="{{ .RelPermalink }}">{{ .Title }}</a>
+      </h3>
+      {{ with .Summary }}
+      <p class="post-card__excerpt">{{ . | plainify | truncate 200 }}</p>
+      {{ end }}
+      <a class="post-card__link" href="{{ .RelPermalink }}">Read post</a>
+    </article>
+    {{ end }}
+  </section>
 {{ end }}

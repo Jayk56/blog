@@ -3,6 +3,24 @@ languageCode = 'en-us'
 title = 'Jay Kerschner'
 theme = 'wholelattesyntax'
 
+[menus]
+  [[menus.main]]
+    name = 'Home'
+    pageRef = '/'
+    weight = 10
+  [[menus.main]]
+    name = 'Posts'
+    pageRef = '/posts'
+    weight = 20
+  [[menus.main]]
+    name = 'Tags'
+    pageRef = '/tags'
+    weight = 30
+  [[menus.main]]
+    name = 'Contact'
+    pageRef = '/contact'
+    weight = 40
+
 [markup]
   [markup.highlight]
     noClasses = false
