@@ -1,0 +1,12 @@
+{{ define "main" }}
+<h1>{{ .Title }}</h1>
+
+<div class="tags-cloud">
+  {{- range .Pages -}}
+  <a href="{{ .RelPermalink }}" class="tag-pill">
+    <span class="tag-pill__name">{{ .Title }}</span>
+    <span class="tag-pill__count">{{ len .Pages }}</span>
+  </a>
+  {{- end -}}
+</div>
+{{ end }}

@@ -1,16 +1,24 @@
 {{ define "main" }}
 <h1>{{ .Title }}</h1>
-{{ range .Pages }}
-<article class="post">
-  <h2>
-    <a href="{{ .Permalink }}">{{ .Title }}</a>
-  </h2>
-  <div class="post-meta">
-    <small>Published on {{ .Date.Format "Jan 2, 2006" }}</small>
-  </div>
-  <div class="post-excerpt">
-    {{ .Summary }}
-  </div>
-</article>
-{{ end }}
+<section class="post-list">
+  {{ range .Pages.ByDate.Reverse }}
+  <article class="post-card">
+    {{ if not .Date.IsZero }}
+    <div class="post-card__meta">
+      <span>Published {{ .Date.Format "Jan 2, 2006" }}</span>
+      {{ if gt .ReadingTime 0 }}<span>{{ .ReadingTime }} min read</span>{{ end }}
+    </div>
+    {{ end }}
+    <h2 class="post-card__title">
+      <a href="{{ .RelPermalink }}">{{ .Title }}</a>
+    </h2>
+    {{ with .Summary }}
+    <p class="post-card__excerpt">{{ . | plainify | truncate 220 }}</p>
+    {{ end }}
+    {{ $linkLabel := "Read post" }}
+    {{ if eq .Kind "term" }}{{ $linkLabel = "View tag" }}{{ end }}
+    <a class="post-card__link" href="{{ .RelPermalink }}">{{ $linkLabel }}</a>
+  </article>
+  {{ end }}
+</section>
 {{ end }}
