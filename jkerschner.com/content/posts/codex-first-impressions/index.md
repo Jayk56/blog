@@ -10,7 +10,7 @@ draft = false
 I’ve been a pretty heavy user of the Codex CLI, and over the past month I’ve churned out about fifteen thousand lines of code per week, working somewhere between three and six days a week. (Hopefully, I'll be able to post more about those projects in the coming weeks) When OpenAI announced the Codex app today [Feb 2nd, 2026], I was excited to see what improvements a graphical interface could bring to the workflow. I'll be testing it out to see what works better, what is worse, and whether I’ll be migrating my work fully to the app or continuing with my current terminal-based workflow. From what I've seen so far, there are some big outstanding questions, but I get the feeling they will be iterating quickly to build this out. 
 
 {{< figure
-  src="codex-impressions/01-lets-build.png"
+  src="codex-impressions/01-lets-build.jpg"
   alt="Codex app home screen"
   caption="Codex App Home Screen"
 >}}
@@ -26,7 +26,7 @@ In the Codex app, it lets you add projects, which map cleanly to the folders I w
 That said, given the context switching required to jump between projects, I don’t know that I’m going to see much benefit from having them all consolidated beyond not having to navigate through folders myself.
 
 {{< figure
-  src="codex-impressions/02-projects-panel.png"
+  src="codex-impressions/02-projects-panel.jpg"
   class="figure-zoom"
   alt="Projects panel showing multiple projects."
   caption="Projects Panel"
@@ -38,7 +38,7 @@ One thing I’ve seen a lot of people use, and have not used myself much, are wo
 The Codex app also provides a way to configure environments, and it basically gives you a way to run a set of commands when you create a new worktree. I’m not using worktrees all that often, but it is required in order to use the environment setup. One important thing to know about worktrees is they require changes to have been committed to git; anything not in git won’t be copied over to the worktree. So if you drop some files into a project and then spin up the worktree conversation, it won’t be able to find them in the worktree folder unless they were committed first. (And if those files contain secrets, don’t commit them—this is exactly why I think we need a better secrets workflow.)
 
 {{< figure
-  src="codex-impressions/06-local-worktree-cloud.png"
+  src="codex-impressions/06-local-worktree-cloud.jpg"
   alt="Environment Selection at Bottom of Editor: Local, Worktree, Cloud"
   caption="Environment Selection Below Prompt: Local, Worktree, Cloud"
 >}}
@@ -52,20 +52,20 @@ Like worktrees, skills and MCP servers are not something I’ve been able to get
 One thing that did jump out right away: some skills require API keys. It would be nice if there was a way to have the skill installer “talk to” the skill so it can set up environment variables (or at least validate what’s needed) so the skill will run properly and let the user know if something’s not going to work. For example, I had to struggle with the transcribe functionality, trying to get the environment to recognize my OpenAI API key so I could call the transcription service. Realistically, the install wizard should be doing the magic for the user in this case, because it was not intuitive to me how to set it versus on the command line—where you just set it and forget it.
 
 {{< figure
-  src="codex-impressions/03-skills-overview.png"
+  src="codex-impressions/03-skills-overview.jpg"
   alt="Skills overview screen."
   caption="Skills Overview / Repository Selection"
 >}}
 
 {{< figure
-  src="codex-impressions/04-skills-install.png"
+  src="codex-impressions/04-skills-install.jpg"
   class="figure-zoom"
   alt="Skills install screen."
   caption="Skill Install UI / Confirmation"
 >}}
 
 {{< figure
-  src="codex-impressions/05-mcp-settings.png"
+  src="codex-impressions/05-mcp-settings.jpg"
   alt="MCP settings screen."
   caption="MCP Settings"
 >}}
@@ -77,7 +77,7 @@ Note for posterity: I was able to get the transcription skill to work. The way I
 Automations is another tab provided in the Codex app that I haven’t really been using on my personal projects. Some potential automations I could see being useful are documentation updates running on a regular basis (weekly), code architecture reviews and cleanup, and other background work where the agent can do some sort of review and validation and then suggest updates. Then I can review and decide what would be worth pulling into the project.
 
 {{< figure
-  src="codex-impressions/07-automations.png"
+  src="codex-impressions/07-automations.jpg"
   alt="Automations tab in the Codex app."
   caption="Automations Tab"
 >}}
