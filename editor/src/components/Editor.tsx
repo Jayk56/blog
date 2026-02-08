@@ -1,8 +1,12 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
-import CodeMirror from '@uiw/react-codemirror'
+import { useEffect, useState, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
+import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { markdown } from '@codemirror/lang-markdown'
 import { readFile, writeFile, Post } from '../lib/api'
 import { useWebSocket } from '../lib/ws'
+
+export interface EditorHandle {
+  insertAtCursor: (text: string) => boolean
+}
 
 interface EditorProps {
   slug: string
@@ -25,18 +29,33 @@ const editorPaths: Record<string, (slug: string) => string> = {
   review: (slug: string) => `output/review/${slug}/review.md`,
 };
 
-export default function Editor({ slug, post }: EditorProps) {
+const Editor = forwardRef<EditorHandle, EditorProps>(function Editor({ slug, post }, ref) {
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(true)
   const [wordCount, setWordCount] = useState(0)
+  const cmRef = useRef<ReactCodeMirrorRef>(null)
   const savingTimeoutRef = useRef<NodeJS.Timeout>()
   const justSavedPathRef = useRef<string | null>(null)
   const justSavedTimerRef = useRef<NodeJS.Timeout>()
   const dirtyRef = useRef(false)
   const editRevisionRef = useRef(0)
   const ws = useWebSocket()
+
+  useImperativeHandle(ref, () => ({
+    insertAtCursor(text: string) {
+      const view = cmRef.current?.view
+      if (!view) return false
+      const pos = view.state.selection.main.head
+      view.dispatch({
+        changes: { from: pos, insert: text },
+        selection: { anchor: pos + text.length },
+      })
+      view.focus()
+      return true
+    },
+  }))
 
   const getEditorPath = useCallback(() => {
     const pathFn = editorPaths[post.stage as keyof typeof editorPaths]
@@ -183,6 +202,7 @@ export default function Editor({ slug, post }: EditorProps) {
   return (
     <div className="flex flex-col h-full">
       <CodeMirror
+        ref={cmRef}
         value={content}
         onChange={handleChange}
         extensions={[markdown()]}
@@ -217,4 +237,6 @@ export default function Editor({ slug, post }: EditorProps) {
       </div>
     </div>
   )
-}
+})
+
+export default Editor

@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ChevronLeft } from 'lucide-react'
 import { fetchPost, Post } from '../lib/api'
 import { useWebSocket } from '../lib/ws'
 import ReferencePanel from './ReferencePanel'
-import Editor from './Editor'
+import Editor, { type EditorHandle } from './Editor'
 import AssetGallery from './AssetGallery'
 import PipelineBar from './PipelineBar'
 
@@ -15,7 +15,12 @@ export default function Workspace() {
   const [loading, setLoading] = useState(true)
   const [leftOpen, setLeftOpen] = useState(true)
   const [rightOpen, setRightOpen] = useState(true)
+  const editorRef = useRef<EditorHandle>(null)
   const ws = useWebSocket()
+
+  const handleInsertAsset = useCallback((text: string): boolean => {
+    return editorRef.current?.insertAtCursor(text) ?? false
+  }, [])
 
   if (!slug) {
     navigate('/')
@@ -88,12 +93,12 @@ export default function Workspace() {
         )}
 
         <div style={{ width: leftOpen && rightOpen ? '50%' : leftOpen || rightOpen ? '75%' : '100%' }} className="workspace-panel">
-          <Editor slug={slug} post={post} />
+          <Editor ref={editorRef} slug={slug} post={post} />
         </div>
 
         {rightOpen && (
           <div style={{ width: '25%' }} className="workspace-panel">
-            <AssetGallery slug={slug} />
+            <AssetGallery slug={slug} onInsertAsset={['draft', 'review'].includes(post.stage) ? handleInsertAsset : undefined} />
           </div>
         )}
       </div>

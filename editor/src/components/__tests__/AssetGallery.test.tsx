@@ -21,8 +21,8 @@ function createImageFile(name = 'image.png') {
   return new File(['fake-image'], name, { type: 'image/png' })
 }
 
-async function renderGallery() {
-  render(<AssetGallery slug="my-post" />)
+async function renderGallery(props?: { onInsertAsset?: (text: string) => boolean }) {
+  render(<AssetGallery slug="my-post" {...props} />)
   await waitFor(() => {
     expect(mockReadFile).toHaveBeenCalled()
   })
@@ -148,5 +148,63 @@ describe('AssetGallery', () => {
     expect(
       await screen.findByText('Drag & drop images here, paste from clipboard, or click Upload')
     ).toBeInTheDocument()
+  })
+
+  test('shows Insert button when onInsertAsset prop is provided and asset has a file', async () => {
+    mockReadFile.mockResolvedValueOnce(JSON.stringify({
+      assets: [
+        { id: 'upload-1', status: 'success', file: 'assets/photo.png', originalName: 'Photo.png' },
+      ],
+    }))
+
+    await renderGallery({ onInsertAsset: vi.fn(() => true) })
+
+    expect(screen.getByTestId('insert-asset-0')).toHaveTextContent('Insert')
+  })
+
+  test('does not show Insert button when onInsertAsset is not provided', async () => {
+    mockReadFile.mockResolvedValueOnce(JSON.stringify({
+      assets: [
+        { id: 'upload-1', status: 'success', file: 'assets/photo.png', originalName: 'Photo.png' },
+      ],
+    }))
+
+    await renderGallery()
+
+    expect(screen.queryByTestId('insert-asset-0')).not.toBeInTheDocument()
+  })
+
+  test('calls onInsertAsset with Hugo figure shortcode when Insert is clicked', async () => {
+    mockReadFile.mockResolvedValueOnce(JSON.stringify({
+      assets: [
+        { id: 'upload-1', status: 'success', file: 'assets/photo.png', originalName: 'Photo.png' },
+      ],
+    }))
+
+    const onInsertAsset = vi.fn(() => true)
+    await renderGallery({ onInsertAsset })
+
+    fireEvent.click(screen.getByTestId('insert-asset-0'))
+
+    expect(onInsertAsset).toHaveBeenCalledWith(
+      '{{< figure src="photo.png" alt="Photo.png" class="mx-auto" >}}\n'
+    )
+  })
+
+  test('does not show Inserted confirmation when onInsertAsset returns false', async () => {
+    mockReadFile.mockResolvedValueOnce(JSON.stringify({
+      assets: [
+        { id: 'upload-1', status: 'success', file: 'assets/photo.png', originalName: 'Photo.png' },
+      ],
+    }))
+
+    const onInsertAsset = vi.fn(() => false)
+    await renderGallery({ onInsertAsset })
+
+    fireEvent.click(screen.getByTestId('insert-asset-0'))
+
+    expect(onInsertAsset).toHaveBeenCalled()
+    expect(screen.getByTestId('insert-asset-0')).toHaveTextContent('Insert')
+    expect(screen.queryByText('Inserted!')).not.toBeInTheDocument()
   })
 })

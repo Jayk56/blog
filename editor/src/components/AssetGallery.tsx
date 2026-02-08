@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
-import { Upload } from 'lucide-react'
+import { ImagePlus, Upload } from 'lucide-react'
 import { readFile, uploadAssets } from '../lib/api'
 import { useWebSocket } from '../lib/ws'
 
@@ -15,6 +15,7 @@ interface Asset {
 
 interface AssetGalleryProps {
   slug: string
+  onInsertAsset?: (markdown: string) => boolean
 }
 
 function hasDraggedFiles(dataTransfer: DataTransfer | null): boolean {
@@ -38,12 +39,18 @@ function isImageFile(filename: string): boolean {
   return IMAGE_EXTENSIONS.has(filename.slice(dot).toLowerCase())
 }
 
-export default function AssetGallery({ slug }: AssetGalleryProps) {
+function buildFigureShortcode(filename: string, alt: string): string {
+  const escapedAlt = alt.replace(/"/g, '\\"')
+  return `{{< figure src="${filename}" alt="${escapedAlt}" class="mx-auto" >}}\n`
+}
+
+export default function AssetGallery({ slug, onInsertAsset }: AssetGalleryProps) {
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [insertedIdx, setInsertedIdx] = useState<number | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const dragDepthRef = useRef(0)
@@ -247,7 +254,34 @@ export default function AssetGallery({ slug }: AssetGalleryProps) {
                     {asset.originalName || asset.name}
                   </div>
                 </div>
-                <div className="text-gray-500 text-xs mt-1">{asset.status}</div>
+                <div className="flex items-center justify-between mt-1">
+                  <div className="text-gray-500 text-xs">{asset.status}</div>
+                  {onInsertAsset && asset.file && getFilenameFromAssetPath(asset.file) && isImageFile(getFilenameFromAssetPath(asset.file)!) && (
+                    <button
+                      type="button"
+                      data-testid={`insert-asset-${idx}`}
+                      onClick={() => {
+                        const filename = getFilenameFromAssetPath(asset.file!)!
+                        const alt = asset.originalName || asset.name
+                        const ok = onInsertAsset(buildFigureShortcode(filename, alt))
+                        if (ok) {
+                          setInsertedIdx(idx)
+                          setTimeout(() => setInsertedIdx(null), 1500)
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 rounded border border-gray-500 bg-gray-600 px-1.5 py-0.5 text-[10px] text-gray-200 hover:bg-gray-500 transition"
+                    >
+                      {insertedIdx === idx ? (
+                        <span className="text-green-300">Inserted!</span>
+                      ) : (
+                        <>
+                          <ImagePlus size={10} />
+                          Insert
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
