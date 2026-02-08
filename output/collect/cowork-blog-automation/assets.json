@@ -1,0 +1,36 @@
+{
+  "slug": "cowork-blog-automation",
+  "collected_at": "2026-02-08T21:03:28.932Z",
+  "total_requested": 0,
+  "total_successful": 3,
+  "assets": [
+    {
+      "id": "upload-1",
+      "type": "image",
+      "status": "success",
+      "file": "assets/folders.jpeg",
+      "originalName": "Folders.jpeg",
+      "size_bytes": 40511,
+      "uploaded_at": "2026-02-08T17:42:15.805Z"
+    },
+    {
+      "id": "upload-2",
+      "type": "image",
+      "status": "success",
+      "file": "assets/image.png",
+      "originalName": "image.png",
+      "size_bytes": 1014055,
+      "uploaded_at": "2026-02-08T20:58:58.295Z"
+    },
+    {
+      "id": "upload-3",
+      "type": "image",
+      "status": "success",
+      "file": "assets/ios-shortcut.jpeg",
+      "originalName": "ios-shortcut.jpeg",
+      "size_bytes": 195302,
+      "uploaded_at": "2026-02-08T21:03:28.932Z"
+    }
+  ],
+  "failures": []
+}
