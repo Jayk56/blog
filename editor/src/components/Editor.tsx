@@ -32,6 +32,10 @@ export default function Editor({ slug, post }: EditorProps) {
   const [saved, setSaved] = useState(true)
   const [wordCount, setWordCount] = useState(0)
   const savingTimeoutRef = useRef<NodeJS.Timeout>()
+  const justSavedPathRef = useRef<string | null>(null)
+  const justSavedTimerRef = useRef<NodeJS.Timeout>()
+  const dirtyRef = useRef(false)
+  const editRevisionRef = useRef(0)
   const ws = useWebSocket()
 
   const getEditorPath = useCallback(() => {
@@ -41,74 +45,119 @@ export default function Editor({ slug, post }: EditorProps) {
 
   const canEdit = ['draft', 'review'].includes(post.stage)
 
-  const loadContent = async () => {
-    try {
-      setLoading(true)
-      const path = getEditorPath()
-      if (!path) {
-        setContent('')
-      } else {
-        const data = await readFile(slug, path)
-        setContent(data || getTomlTemplate())
-      }
-    } catch (error) {
-      console.error('Failed to load editor content:', error)
-      setContent('')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const saveContent = async (text: string) => {
-    const path = getEditorPath()
-    if (!path || !canEdit) return
-
+  // Save content to a specific path (captured at schedule time to prevent cross-post writes)
+  const doSave = useCallback(async (text: string, savePath: string, saveSlug: string, revision: number) => {
     try {
       setSaving(true)
       setSaved(false)
-      await writeFile(slug, path, text)
-      setSaved(true)
+      await writeFile(saveSlug, savePath, text)
+      // Only clear dirty if no newer edits occurred during the save
+      if (editRevisionRef.current === revision) {
+        dirtyRef.current = false
+        setSaved(true)
+      }
+      // Prevent the file watcher from reloading content we just saved
+      justSavedPathRef.current = savePath
+      if (justSavedTimerRef.current) clearTimeout(justSavedTimerRef.current)
+      justSavedTimerRef.current = setTimeout(() => { justSavedPathRef.current = null }, 2000)
     } catch (error) {
       console.error('Failed to save content:', error)
     } finally {
       setSaving(false)
     }
-  }
+  }, [])
 
-  const handleChange = (value: string) => {
+  const loadContent = useCallback(async (cancelPendingSave = true) => {
+    if (cancelPendingSave && savingTimeoutRef.current) {
+      clearTimeout(savingTimeoutRef.current)
+      savingTimeoutRef.current = undefined
+    }
+    try {
+      setLoading(true)
+      const path = getEditorPath()
+      let text = ''
+      if (path) {
+        const data = await readFile(slug, path)
+        text = data || getTomlTemplate()
+      }
+      setContent(text)
+      setWordCount(text.trim().split(/\s+/).filter(Boolean).length)
+      dirtyRef.current = false
+      setSaved(true)
+    } catch (error) {
+      console.error('Failed to load editor content:', error)
+      setContent('')
+      setWordCount(0)
+    } finally {
+      setLoading(false)
+    }
+  }, [slug, getEditorPath])
+
+  const handleChange = useCallback((value: string) => {
     setContent(value)
+    dirtyRef.current = true
+    editRevisionRef.current += 1
     setSaved(false)
 
-    // Calculate word count (rough estimate)
-    const words = value.trim().split(/\s+/).length
-    setWordCount(Math.max(0, words - 10)) // Subtract approximate front matter words
+    // Calculate word count
+    const words = value.trim().split(/\s+/).filter(Boolean).length
+    setWordCount(words)
+
+    // Capture save target and revision at schedule time
+    const savePath = getEditorPath()
+    if (!savePath || !canEdit) return
+    const revision = editRevisionRef.current
 
     // Debounced save
     if (savingTimeoutRef.current) {
       clearTimeout(savingTimeoutRef.current)
     }
     savingTimeoutRef.current = setTimeout(() => {
-      saveContent(value)
+      savingTimeoutRef.current = undefined
+      doSave(value, savePath, slug, revision)
     }, 1000)
-  }
+  }, [getEditorPath, canEdit, slug, doSave])
 
+  // Load content when slug or stage changes; cancel any pending save for the old post
   useEffect(() => {
+    if (savingTimeoutRef.current) {
+      clearTimeout(savingTimeoutRef.current)
+      savingTimeoutRef.current = undefined
+    }
     loadContent()
-  }, [slug, post.stage])
+  }, [loadContent])
 
+  // Subscribe to file-changed events (separate from save timer cleanup)
   useEffect(() => {
     const unsubscribe = ws.subscribe('file-changed', (event) => {
       if (event.slug === slug && event.path === getEditorPath()) {
-        loadContent()
+        // Skip echo from our own save
+        if (justSavedPathRef.current === event.path) {
+          justSavedPathRef.current = null
+          if (justSavedTimerRef.current) clearTimeout(justSavedTimerRef.current)
+          return
+        }
+        // Don't overwrite unsaved or in-flight user edits with external changes
+        if (dirtyRef.current || savingTimeoutRef.current) return
+        loadContent(false)
       }
     })
+    return () => {
+      unsubscribe()
+    }
+  }, [slug, post.stage, ws, getEditorPath, loadContent])
+
+  // Clean up timers on unmount
+  useEffect(() => {
     return () => {
       if (savingTimeoutRef.current) {
         clearTimeout(savingTimeoutRef.current)
       }
-      unsubscribe()
+      if (justSavedTimerRef.current) {
+        clearTimeout(justSavedTimerRef.current)
+      }
     }
-  }, [slug, post.stage, ws, getEditorPath])
+  }, [])
 
   const readingTime = Math.ceil(wordCount / 200)
 

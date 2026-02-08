@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useMemo } from 'react'
 
 export interface WebSocketEvent {
   type: string
@@ -84,7 +84,6 @@ export function subscribe(
 }
 
 export function useWebSocket() {
-  const [lastEvent, setLastEvent] = useState<WebSocketEvent | null>(null)
   const subscribeFnRef = useRef(subscribe)
 
   useEffect(() => {
@@ -94,14 +93,14 @@ export function useWebSocket() {
     }
   }, [])
 
-  return {
-    lastEvent,
-    subscribe: (type: string, callback: EventCallback): (() => void) => {
-      const wrappedCallback = (event: WebSocketEvent) => {
-        setLastEvent(event)
-        callback(event)
-      }
-      return subscribeFnRef.current(type, wrappedCallback)
+  const stableSubscribe = useCallback(
+    (type: string, callback: EventCallback): (() => void) => {
+      return subscribeFnRef.current(type, callback)
     },
-  }
+    []
+  )
+
+  return useMemo(() => ({
+    subscribe: stableSubscribe,
+  }), [stableSubscribe])
 }
