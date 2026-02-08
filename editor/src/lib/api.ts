@@ -97,3 +97,25 @@ export async function fetchJobStatus(jobId: string): Promise<PipelineJob> {
   if (!response.ok) throw new Error(`Failed to fetch job status: ${jobId}`)
   return response.json()
 }
+
+export async function uploadAssets(
+  slug: string,
+  files: File[]
+): Promise<{
+  uploaded: Array<{ id: string; file: string; originalName: string; size_bytes: number }>
+}> {
+  const formData = new FormData()
+  files.forEach((file) => formData.append('files', file))
+
+  const response = await fetch(`${API_BASE}/posts/${slug}/assets/upload`, {
+    method: 'POST',
+    body: formData,
+  })
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Upload failed' }))
+    throw new Error(err.error || 'Upload failed')
+  }
+
+  return response.json()
+}
