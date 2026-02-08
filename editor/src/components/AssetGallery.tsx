@@ -6,6 +6,7 @@ interface Asset {
   name: string
   status: string
   url?: string
+  file?: string
 }
 
 interface AssetGalleryProps {
@@ -20,13 +21,20 @@ export default function AssetGallery({ slug }: AssetGalleryProps) {
   const loadAssets = async () => {
     try {
       setLoading(true)
-      const assetsJsonPath = `assets/${slug}/assets.json`
+      const assetsJsonPath = `output/collect/${slug}/assets.json`
       const data = await readFile(slug, assetsJsonPath)
 
       if (data) {
         try {
           const parsed = JSON.parse(data)
-          setAssets(Array.isArray(parsed) ? parsed : [])
+          const raw = Array.isArray(parsed) ? parsed : (parsed.assets || [])
+          const items = raw.map((a: any) => ({
+            name: a.name || a.id || a.description || 'Untitled',
+            status: a.status || 'unknown',
+            url: a.url,
+            file: a.file,
+          }))
+          setAssets(items)
         } catch {
           setAssets([])
         }

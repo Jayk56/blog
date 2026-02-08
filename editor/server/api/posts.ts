@@ -1,7 +1,7 @@
 import express, { Router, Request, Response } from 'express';
 import fs from 'fs-extra';
 import path from 'path';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 const router = Router();
 
@@ -258,7 +258,7 @@ router.post('/posts', async (req: Request, res: Response) => {
     // Run new-post.sh script
     const scriptPath = path.join(repoRoot, 'pipeline/scripts/new-post.sh');
     try {
-      execSync(`bash ${scriptPath} ${slug} ${category}`, {
+      execFileSync('bash', [scriptPath, slug, category], {
         cwd: repoRoot,
         stdio: 'pipe',
       });

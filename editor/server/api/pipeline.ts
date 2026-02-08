@@ -8,7 +8,7 @@ const router = Router();
 // Job tracking
 interface Job {
   jobId: string;
-  status: 'running' | 'completed';
+  status: 'running' | 'completed' | 'failed';
   exitCode?: number;
   output: string[];
   process?: ChildProcess;
@@ -136,8 +136,8 @@ router.post('/posts/:slug/pipeline/:action', async (req: Request, res: Response)
 
     // Handle process exit
     proc.on('exit', (code) => {
-      job.status = 'completed';
       job.exitCode = code || 0;
+      job.status = job.exitCode === 0 ? 'completed' : 'failed';
 
       broadcast({
         type: 'pipeline-complete',

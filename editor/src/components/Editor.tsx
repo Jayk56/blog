@@ -9,7 +9,8 @@ interface EditorProps {
   post: Post
 }
 
-const TOML_TEMPLATE = `+++
+function getTomlTemplate() {
+  return `+++
 title = ''
 date = ${new Date().toISOString()}
 draft = true
@@ -17,9 +18,9 @@ tags = []
 +++
 
 `;
+}
 
 const editorPaths: Record<string, (slug: string) => string> = {
-  preprocess: (slug: string) => `output/draft/${slug}/draft.md`,
   draft: (slug: string) => `output/draft/${slug}/draft.md`,
   review: (slug: string) => `output/review/${slug}/review.md`,
 };
@@ -38,7 +39,7 @@ export default function Editor({ slug, post }: EditorProps) {
     return pathFn ? pathFn(slug) : null
   }, [slug, post.stage])
 
-  const canEdit = ['preprocess', 'draft', 'review'].includes(post.stage)
+  const canEdit = ['draft', 'review'].includes(post.stage)
 
   const loadContent = async () => {
     try {
@@ -48,7 +49,7 @@ export default function Editor({ slug, post }: EditorProps) {
         setContent('')
       } else {
         const data = await readFile(slug, path)
-        setContent(data || TOML_TEMPLATE)
+        setContent(data || getTomlTemplate())
       }
     } catch (error) {
       console.error('Failed to load editor content:', error)

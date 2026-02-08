@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ChevronUp, ChevronDown, Play } from 'lucide-react'
 import { runPipeline, fetchJobStatus, Post } from '../lib/api'
-import { useWebSocket } from '../lib/ws'
+import { subscribe as wsSubscribe } from '../lib/ws'
 import Terminal from './Terminal'
 
 const STAGES = [
@@ -36,12 +36,17 @@ export default function PipelineBar({
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [runningJob, setRunningJob] = useState<string | null>(null)
   const [jobStatus, setJobStatus] = useState<Record<string, any>>({})
-  const ws = useWebSocket()
+  const pipelineOutputRef = useRef<string[]>([])
+  const [pipelineOutput, setPipelineOutput] = useState<string[]>([])
+  const onPostUpdatedRef = useRef(onPostUpdated)
+  onPostUpdatedRef.current = onPostUpdated
 
   const currentStageIndex = STAGES.findIndex(s => s.key === post.stage)
 
   const handleRunPipeline = async (action: string) => {
     try {
+      pipelineOutputRef.current = []
+      setPipelineOutput([])
       setTerminalOpen(true)
       const job = await runPipeline(slug, action)
       setRunningJob(job.jobId)
@@ -80,12 +85,19 @@ export default function PipelineBar({
   const nextAction = getNextAction()
 
   useEffect(() => {
-    const unsubscribe = ws.subscribe('pipeline-complete', (event) => {
-      setRunningJob(null)
-      onPostUpdated()
+    const unsubOutput = wsSubscribe('pipeline-output', (event) => {
+      pipelineOutputRef.current = [...pipelineOutputRef.current, event.line]
+      setPipelineOutput([...pipelineOutputRef.current])
     })
-    return unsubscribe
-  }, [slug, onPostUpdated])
+    const unsubComplete = wsSubscribe('pipeline-complete', () => {
+      setRunningJob(null)
+      onPostUpdatedRef.current()
+    })
+    return () => {
+      unsubOutput()
+      unsubComplete()
+    }
+  }, [slug])
 
   return (
     <>
@@ -180,7 +192,7 @@ export default function PipelineBar({
         </div>
       </div>
 
-      <Terminal slug={slug} isOpen={terminalOpen} onClose={() => setTerminalOpen(false)} />
+      <Terminal slug={slug} isOpen={terminalOpen} onClose={() => setTerminalOpen(false)} initialOutput={pipelineOutput} />
     </>
   )
 }

@@ -44,32 +44,37 @@ fi
 # Read current stage
 CURRENT_STAGE=$(jq -r '.stage' "${MANIFEST_PATH}")
 
-# Define stage progression and required outputs
-# (disable nounset temporarily — bash expands associative array keys as variables)
-set +u
-declare -A STAGE_OUTPUTS=(
-    ["capture"]="audio-notes/${SLUG}/*.m4a"
-    ["transcribe"]="output/transcribe/${SLUG}/transcript.md"
-    ["preprocess"]="output/outline/${SLUG}/*.md"
-    ["draft"]="output/draft/${SLUG}/*.md"
-    ["review"]="output/review/${SLUG}/*.md"
-    ["collect"]="output/collect/${SLUG}/assets.json"
-    ["publish"]="jkerschner.com/content/posts/${SLUG}/index.md"
-)
+# Stage progression helpers (Bash 3.2 compatible — no associative arrays)
+get_stage_output() {
+    case "$1" in
+        capture)    echo "audio-notes/${SLUG}/*.m4a" ;;
+        transcribe) echo "output/transcribe/${SLUG}/transcript.md" ;;
+        preprocess) echo "output/outline/${SLUG}/*.md" ;;
+        draft)      echo "output/draft/${SLUG}/*.md" ;;
+        review)     echo "output/review/${SLUG}/*.md" ;;
+        collect)    echo "output/collect/${SLUG}/assets.json" ;;
+        publish)    echo "jkerschner.com/content/posts/${SLUG}/index.md" ;;
+        *)          echo "" ;;
+    esac
+}
 
-declare -A NEXT_STAGE=(
-    ["capture"]="transcribe"
-    ["transcribe"]="preprocess"
-    ["preprocess"]="draft"
-    ["draft"]="review"
-    ["review"]="collect"
-    ["collect"]="publish"
-    ["publish"]="published"
-)
-set -u
+get_next_stage() {
+    case "$1" in
+        capture)    echo "transcribe" ;;
+        transcribe) echo "preprocess" ;;
+        preprocess) echo "draft" ;;
+        draft)      echo "review" ;;
+        review)     echo "collect" ;;
+        collect)    echo "publish" ;;
+        publish)    echo "published" ;;
+        *)          echo "" ;;
+    esac
+}
+
+NEXT=$(get_next_stage "${CURRENT_STAGE}")
 
 # Validate current stage
-if [[ -z "${NEXT_STAGE[${CURRENT_STAGE}]}" ]]; then
+if [[ -z "${NEXT}" ]]; then
     echo -e "${RED}Error: Unknown stage '${CURRENT_STAGE}' in manifest${NC}"
     exit 1
 fi
@@ -81,7 +86,7 @@ if [[ "${CURRENT_STAGE}" == "published" ]]; then
 fi
 
 # Validate that current stage output exists
-PATTERN="${STAGE_OUTPUTS[${CURRENT_STAGE}]}"
+PATTERN=$(get_stage_output "${CURRENT_STAGE}")
 PATTERN_EXPANDED="${REPO_ROOT}/${PATTERN}"
 
 # Check if output exists
@@ -90,9 +95,6 @@ if ! compgen -G "${PATTERN_EXPANDED}" > /dev/null; then
     echo "Looking for: ${PATTERN}"
     exit 1
 fi
-
-# Get next stage
-NEXT="${NEXT_STAGE[${CURRENT_STAGE}]}"
 
 # Update manifest
 MANIFEST_UPDATED=$(jq \

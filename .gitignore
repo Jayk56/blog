@@ -81,5 +81,8 @@ output/collect/**/collect.log
 editor/node_modules/
 editor/dist/
 
+# Codex CLI (contains API keys)
+.codex/
+
 # macOS junk
 .DS_Store
