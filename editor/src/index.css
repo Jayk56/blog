@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-900 text-gray-100 font-sans;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply bg-gray-800 border border-gray-700;
+  }
+
+  .workspace {
+    @apply h-screen flex flex-col bg-gray-900;
+  }
+
+  .workspace-content {
+    @apply flex flex-1 overflow-hidden;
+  }
+
+  .workspace-panel {
+    @apply panel overflow-auto;
+  }
+
+  .stage-badge {
+    @apply inline-block px-2 py-1 rounded text-xs font-medium;
+  }
+
+  .stage-badge-capture {
+    @apply stage-badge bg-gray-700 text-gray-200;
+  }
+
+  .stage-badge-transcribe {
+    @apply stage-badge bg-blue-900 text-blue-200;
+  }
+
+  .stage-badge-preprocess {
+    @apply stage-badge bg-indigo-900 text-indigo-200;
+  }
+
+  .stage-badge-draft {
+    @apply stage-badge bg-violet-900 text-violet-200;
+  }
+
+  .stage-badge-review {
+    @apply stage-badge bg-amber-900 text-amber-200;
+  }
+
+  .stage-badge-collect {
+    @apply stage-badge bg-yellow-900 text-yellow-200;
+  }
+
+  .stage-badge-publish {
+    @apply stage-badge bg-green-900 text-green-200;
+  }
+
+  .btn-primary {
+    @apply px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition;
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-100 rounded font-medium transition;
+  }
+
+  .btn-sm {
+    @apply px-3 py-1 text-sm;
+  }
+
+  .input-base {
+    @apply w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500;
+  }
+
+  .select-base {
+    @apply w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500;
+  }
+}
+
+/* CodeMirror dark theme tweaks */
+.cm-editor {
+  @apply bg-gray-950 text-gray-100 h-full;
+}
+
+.cm-gutters {
+  @apply bg-gray-900 border-r border-gray-700;
+}
+
+.cm-activeLineGutter {
+  @apply bg-gray-800;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  @apply w-2 h-2;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-800;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-600 rounded hover:bg-gray-500;
+}

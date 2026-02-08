@@ -8,7 +8,7 @@ draft = false
 
 +++
 
-{{< figure src="/images/webpage-explainer-gpt4o-small.jpg" alt="Claude, ChatGPT and Gemini AI building a Kubernetes‑Kustomize explainer webpage" class="mx-auto" >}}
+{{< figure src="webpage-explainer-gpt4o-small.jpg" alt="Claude, ChatGPT and Gemini AI building a Kubernetes‑Kustomize explainer webpage" class="mx-auto" >}}
 
 ## Why I love AI‑generated explainer webpages
 

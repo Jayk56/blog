@@ -21,7 +21,7 @@ This is a lesson I had to re-learn this week when I attempted to replicate the A
 
 Here are the current top (single model) results for the Aider leaderboard:
 
-{{< figure src="/images/aider-leaderboard-may-8-2025.jpg" 
+{{< figure src="aider-leaderboard-may-8-2025.jpg" 
     alt="Screenshot of the Aider LLM Leaderboards page showing polyglot coding benchmark results for May 8, 2025. Three models are listed: o3 (high) with 79.6% accuracy and $111.03 cost, Gemini 2.5 Pro Preview (05-06) with 76.9% accuracy and $37.41 cost, and o4-mini (high) with 72.0% accuracy and $19.64 cost. The leaderboard compares models based on percent correct, cost, command used, and edit format accuracy, with o3 and o4-mini using 'diff' format, and Gemini 2.5 using 'diff-fenced'. Page authored by Paul Gauthier." 
     class="mx-auto" 
 >}}
@@ -33,7 +33,7 @@ When you see this report of scores between 70% and 80% for the top models and ma
 
 This was my thinking, but that's not *quite* what the leaderboard is showing. Here is the chart showing what was just described with the caveat I don't have price information for only allowing 1 try and was only able to get the pass_1_rate from the site:
 
-{{< figure src="/images/aider-leaderboard-modified-1st-attempt-scores-may-8-2025.jpg" 
+{{< figure src="aider-leaderboard-modified-1st-attempt-scores-may-8-2025.jpg" 
     alt="Aider LLM Leaderboards screenshot comparing first-attempt coding benchmark results of o3, Gemini 2.5 Pro Preview, and o4-mini language models. The table displays percent correct, cost, command used, and code edit format. A label in red text reads: ‘Edited to show the scores from the first attempt pass/fail.’" class="mx-auto" 
 >}}
 (a fun aside is that when you show the pass at one like this, the unadjusted-cost matches the scores pretty well)
@@ -44,14 +44,14 @@ The original graph is showing the pass rate when the models have 2 attempts. Eac
 Does the same pattern repeat when you go from 2 tries up to say, 4? 8? 16?
 {{</ alert >}}
 
-{{< figure src="/images/aider-benchmark-performance-trend.jpg" 
+{{< figure src="aider-benchmark-performance-trend.jpg" 
     alt="Line chart titled 'Aider Benchmark Results (May 6 '25) – Line go up??', comparing performance across multiple AI models using Pass@k metrics. The chart includes three lines: o3 with GPT-4.1 (high) in blue, Gemini 2.5 Pro Preview in green, and o3-mini (high) diff edits in gray. A bold black dotted line extends the Gemini 2.5 Pro trajectory toward a large black dot near 100% at Pass@4, suggesting extrapolated peak performance." 
     class="mx-auto" 
 >}}
 
 To which the answer is...
 
-{{< figure src="/images/aider-benchmark-performance-almost.jpg" 
+{{< figure src="aider-benchmark-performance-almost.jpg" 
     alt="Updated line chart titled 'Aider Benchmark Results (May 7 '25) – Almost..', showing improved benchmark results. The Gemini 2.5 Pro Preview line (green) now curves upward more steeply, closely tracking the projected path of the previous chart. The other models remain capped at Pass@2. The black dotted projection ends again near 100% at Pass@4, as a reference point." 
     class="mx-auto"
 >}}

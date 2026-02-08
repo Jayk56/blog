@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "name": "blog-pipeline",
+  "description": "Asset collection tools for the blog content pipeline",
+  "dependencies": {
+    "playwright": "^1.50.0"
+  }
+}

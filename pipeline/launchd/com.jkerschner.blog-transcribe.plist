@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jkerschner.blog-transcribe</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-l</string>
+        <string>-c</string>
+        <string>cd "$HOME/Code/blog" &amp;&amp; bash pipeline/scripts/auto-transcribe.sh</string>
+    </array>
+
+    <!-- Run every 15 minutes (900 seconds) -->
+    <key>StartInterval</key>
+    <integer>900</integer>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/blog-auto-transcribe.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/blog-auto-transcribe.log</string>
+
+    <!-- Don't run if the Mac is on battery -->
+    <key>LowPriorityIO</key>
+    <true/>
+
+    <key>Nice</key>
+    <integer>10</integer>
+</dict>
+</plist>

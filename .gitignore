@@ -53,3 +53,33 @@ Gemfile.lock
 
 # Hugo lockfile
 jkerschner.com/.hugo_build.lock
+
+# Audio files (too large for git — keep locally or in iCloud)
+audio-notes/**/*.m4a
+audio-notes/**/*.mp3
+audio-notes/**/*.wav
+audio-notes/**/*.webm
+audio-notes/**/*.mp4
+
+# Pipeline secrets
+pipeline/.env
+
+# Per-file transcription JSON (raw Scribe output, large)
+output/transcribe/**/*.json
+
+# Node.js dependencies (Playwright for collect stage)
+pipeline/node_modules/
+
+# Collected assets (screenshots are large binary files)
+output/collect/**/assets/*.png
+output/collect/**/assets/*.jpg
+
+# Collection logs
+output/collect/**/collect.log
+
+# Blog editor app
+editor/node_modules/
+editor/dist/
+
+# macOS junk
+.DS_Store
