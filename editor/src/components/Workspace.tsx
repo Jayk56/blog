@@ -27,15 +27,15 @@ export default function Workspace() {
     return null
   }
 
-  const loadPost = async () => {
+  const loadPost = async (isRefresh = false) => {
     try {
-      setLoading(true)
+      if (!isRefresh) setLoading(true)
       const data = await fetchPost(slug)
       setPost(data)
     } catch (error) {
       console.error('Failed to load post:', error)
     } finally {
-      setLoading(false)
+      if (!isRefresh) setLoading(false)
     }
   }
 
@@ -44,8 +44,8 @@ export default function Workspace() {
   }, [slug])
 
   useEffect(() => {
-    const unsubscribe = ws.subscribe('manifest-changed', () => {
-      loadPost()
+    const unsubscribe = ws.subscribe('manifest-changed', (event) => {
+      if (event.slug === slug) loadPost(true)
     })
     return unsubscribe
   }, [slug, ws])
@@ -106,7 +106,7 @@ export default function Workspace() {
       <PipelineBar
         slug={slug}
         post={post}
-        onPostUpdated={loadPost}
+        onPostUpdated={() => loadPost(true)}
         leftOpen={leftOpen}
         onToggleLeft={() => setLeftOpen(!leftOpen)}
         rightOpen={rightOpen}

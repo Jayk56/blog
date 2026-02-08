@@ -86,10 +86,12 @@ export default function PipelineBar({
 
   useEffect(() => {
     const unsubOutput = wsSubscribe('pipeline-output', (event) => {
+      if (event.slug !== slug) return
       pipelineOutputRef.current = [...pipelineOutputRef.current, event.line]
       setPipelineOutput([...pipelineOutputRef.current])
     })
-    const unsubComplete = wsSubscribe('pipeline-complete', () => {
+    const unsubComplete = wsSubscribe('pipeline-complete', (event) => {
+      if (event.slug !== slug) return
       setRunningJob(null)
       onPostUpdatedRef.current()
     })

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
+import { EditorView } from '@codemirror/view'
 import { markdown } from '@codemirror/lang-markdown'
 import { readFile, writeFile, Post } from '../lib/api'
 import { useWebSocket } from '../lib/ws'
@@ -40,6 +41,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor({ slug, pos
   const justSavedPathRef = useRef<string | null>(null)
   const justSavedTimerRef = useRef<NodeJS.Timeout>()
   const dirtyRef = useRef(false)
+  const contentRef = useRef('')
   const editRevisionRef = useRef(0)
   const ws = useWebSocket()
 
@@ -86,34 +88,39 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor({ slug, pos
     }
   }, [])
 
-  const loadContent = useCallback(async (cancelPendingSave = true) => {
+  const updateContent = useCallback((text: string) => {
+    setContent(text)
+    contentRef.current = text
+    setWordCount(text.trim().split(/\s+/).filter(Boolean).length)
+    dirtyRef.current = false
+    setSaved(true)
+  }, [])
+
+  const loadContent = useCallback(async ({ cancelPendingSave = true, showLoading = false } = {}) => {
     if (cancelPendingSave && savingTimeoutRef.current) {
       clearTimeout(savingTimeoutRef.current)
       savingTimeoutRef.current = undefined
     }
     try {
-      setLoading(true)
+      if (showLoading) setLoading(true)
       const path = getEditorPath()
       let text = ''
       if (path) {
         const data = await readFile(slug, path)
         text = data || getTomlTemplate()
       }
-      setContent(text)
-      setWordCount(text.trim().split(/\s+/).filter(Boolean).length)
-      dirtyRef.current = false
-      setSaved(true)
+      updateContent(text)
     } catch (error) {
       console.error('Failed to load editor content:', error)
-      setContent('')
-      setWordCount(0)
+      updateContent('')
     } finally {
-      setLoading(false)
+      if (showLoading) setLoading(false)
     }
-  }, [slug, getEditorPath])
+  }, [slug, getEditorPath, updateContent])
 
   const handleChange = useCallback((value: string) => {
     setContent(value)
+    contentRef.current = value
     dirtyRef.current = true
     editRevisionRef.current += 1
     setSaved(false)
@@ -143,14 +150,15 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor({ slug, pos
       clearTimeout(savingTimeoutRef.current)
       savingTimeoutRef.current = undefined
     }
-    loadContent()
+    loadContent({ showLoading: true })
   }, [loadContent])
 
   // Subscribe to file-changed events (separate from save timer cleanup)
   useEffect(() => {
-    const unsubscribe = ws.subscribe('file-changed', (event) => {
-      if (event.slug === slug && event.path === getEditorPath()) {
-        // Skip echo from our own save
+    const unsubscribe = ws.subscribe('file-changed', async (event) => {
+      const editorPath = getEditorPath()
+      if (event.slug === slug && event.path === editorPath) {
+        // Skip echo from our own save (fast path to avoid unnecessary fetch)
         if (justSavedPathRef.current === event.path) {
           justSavedPathRef.current = null
           if (justSavedTimerRef.current) clearTimeout(justSavedTimerRef.current)
@@ -158,13 +166,20 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor({ slug, pos
         }
         // Don't overwrite unsaved or in-flight user edits with external changes
         if (dirtyRef.current || savingTimeoutRef.current) return
-        loadContent(false)
+        // Fetch and compare content — skip update if identical (catches late echoes)
+        try {
+          const serverText = await readFile(slug, editorPath!)
+          if (serverText === contentRef.current) return
+          updateContent(serverText || getTomlTemplate())
+        } catch (error) {
+          console.error('Failed to reload editor content:', error)
+        }
       }
     })
     return () => {
       unsubscribe()
     }
-  }, [slug, post.stage, ws, getEditorPath, loadContent])
+  }, [slug, post.stage, ws, getEditorPath, updateContent])
 
   // Clean up timers on unmount
   useEffect(() => {
@@ -205,7 +220,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor({ slug, pos
         ref={cmRef}
         value={content}
         onChange={handleChange}
-        extensions={[markdown()]}
+        extensions={[markdown(), EditorView.lineWrapping]}
         theme="dark"
         className="flex-1 cm-editor-wrapper"
         basicSetup={{
