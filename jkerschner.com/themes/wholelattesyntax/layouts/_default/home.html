@@ -6,10 +6,15 @@
   {{ end }}
 
   {{ $posts := where site.RegularPages "Type" "posts" }}
-  {{ $pinned := first 1 (where $posts "File.BaseFileName" "introduction") }}
+  {{ $pinned := first 1 (where $posts "Params.pinned" true) }}
+  {{ if eq (len $pinned) 0 }}
+  {{ $pinned = first 1 (where $posts "File.Path" "posts/introduction/index.md") }}
+  {{ end }}
+  {{ $latest := $posts }}
 
   {{ if gt (len $pinned) 0 }}
   {{ $p := index $pinned 0 }}
+  {{ $latest = where $posts "RelPermalink" "ne" $p.RelPermalink }}
   <section class="post-list">
     <article class="post-card">
       <span class="post-card__pin" aria-hidden="true"></span>
@@ -30,7 +35,6 @@
 
   <section class="post-list">
     <h2>Latest posts</h2>
-    {{ $latest := where $posts "File.BaseFileName" "ne" "introduction" }}
     {{ range first 3 $latest.ByDate.Reverse }}
     <article class="post-card">
       <div class="post-card__meta">

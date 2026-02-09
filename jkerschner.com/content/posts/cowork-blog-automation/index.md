@@ -1,7 +1,6 @@
 +++
 title = 'Building a Blog Pipeline with Claude Code and Voice Memos'
 date = 2026-02-08T02:30:38.640Z
-draft = true
 tags = ["ai", "claude cowork", "automation", "blogging", "workflow"]
 +++
 

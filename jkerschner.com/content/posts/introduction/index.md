@@ -2,6 +2,7 @@
 title: "Introduction"
 date: 2024-12-27T15:42:03Z
 draft: false
+pinned: true
 ---
 Hi there, my name is Jay and this is my corner of the Internet.
 
