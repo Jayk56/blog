@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback, forwardRef, useImperativeHand
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { EditorView } from '@codemirror/view'
 import { markdown } from '@codemirror/lang-markdown'
-import { readFile, writeFile, Post } from '../lib/api'
+import { readFile, writeFile, postMetadata, Post } from '../lib/api'
 import { useWebSocket } from '../lib/ws'
 
 export interface EditorHandle {
@@ -27,7 +27,7 @@ tags = []
 
 const editorPaths: Record<string, (slug: string) => string> = {
   draft: (slug: string) => `output/draft/${slug}/draft.md`,
-  review: (slug: string) => `output/review/${slug}/review.md`,
+  review: (slug: string) => `output/draft/${slug}/draft.md`,
 };
 
 const Editor = forwardRef<EditorHandle, EditorProps>(function Editor({ slug, post }, ref) {
@@ -43,6 +43,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor({ slug, pos
   const dirtyRef = useRef(false)
   const contentRef = useRef('')
   const editRevisionRef = useRef(0)
+  const sessionStartRef = useRef<string | null>(null)
+  const sessionSaveCountRef = useRef(0)
+  const sessionWordCountStartRef = useRef(0)
   const ws = useWebSocket()
 
   useImperativeHandle(ref, () => ({
@@ -81,19 +84,42 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor({ slug, pos
       justSavedPathRef.current = savePath
       if (justSavedTimerRef.current) clearTimeout(justSavedTimerRef.current)
       justSavedTimerRef.current = setTimeout(() => { justSavedPathRef.current = null }, 2000)
+
+      // Track editing session metadata
+      sessionSaveCountRef.current += 1
+      if (sessionSaveCountRef.current % 5 === 0 && sessionStartRef.current) {
+        const words = text.trim().split(/\s+/).filter(Boolean).length
+        postMetadata(saveSlug, {
+          editing: {
+            sessions: [{
+              started_at: sessionStartRef.current,
+              last_save_at: new Date().toISOString(),
+              save_count: sessionSaveCountRef.current,
+              stage: post.stage,
+              word_count_start: sessionWordCountStartRef.current,
+              word_count_end: words,
+            }],
+          },
+        }).catch(err => console.error('Failed to post editing metadata:', err))
+      }
     } catch (error) {
       console.error('Failed to save content:', error)
     } finally {
       setSaving(false)
     }
-  }, [])
+  }, [post.stage])
 
-  const updateContent = useCallback((text: string) => {
+  const updateContent = useCallback((text: string, startSession = false) => {
     setContent(text)
     contentRef.current = text
     setWordCount(text.trim().split(/\s+/).filter(Boolean).length)
     dirtyRef.current = false
     setSaved(true)
+    if (startSession) {
+      sessionStartRef.current = new Date().toISOString()
+      sessionSaveCountRef.current = 0
+      sessionWordCountStartRef.current = text.trim().split(/\s+/).filter(Boolean).length
+    }
   }, [])
 
   const loadContent = useCallback(async ({ cancelPendingSave = true, showLoading = false } = {}) => {
@@ -109,7 +135,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor({ slug, pos
         const data = await readFile(slug, path)
         text = data || getTomlTemplate()
       }
-      updateContent(text)
+      updateContent(text, true)
     } catch (error) {
       console.error('Failed to load editor content:', error)
       updateContent('')
@@ -181,7 +207,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor({ slug, pos
     }
   }, [slug, post.stage, ws, getEditorPath, updateContent])
 
-  // Clean up timers on unmount
+  // Clean up timers and flush session metadata on unmount
   useEffect(() => {
     return () => {
       if (savingTimeoutRef.current) {
@@ -190,8 +216,24 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor({ slug, pos
       if (justSavedTimerRef.current) {
         clearTimeout(justSavedTimerRef.current)
       }
+      // Flush final session metadata
+      if (sessionStartRef.current && sessionSaveCountRef.current > 0) {
+        const words = contentRef.current.trim().split(/\s+/).filter(Boolean).length
+        postMetadata(slug, {
+          editing: {
+            sessions: [{
+              started_at: sessionStartRef.current,
+              last_save_at: new Date().toISOString(),
+              save_count: sessionSaveCountRef.current,
+              stage: post.stage,
+              word_count_start: sessionWordCountStartRef.current,
+              word_count_end: words,
+            }],
+          },
+        }).catch(() => {}) // fire and forget on unmount
+      }
     }
-  }, [])
+  }, [slug, post.stage])
 
   const readingTime = Math.ceil(wordCount / 200)
 

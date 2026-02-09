@@ -300,13 +300,17 @@ router.post('/posts/:slug/assets/upload', async (req: Request, res: Response) =>
 
         await fs.writeFile(fullFilePath, file.buffer);
 
+        // If the file was deduplicated (name changed), use the unique name as
+        // the display name so the user can distinguish between uploads
+        const displayName = uniqueFileName !== safeBaseName ? uniqueFileName : file.originalname;
+
         const id = `upload-${nextAssetId}`;
         const manifestAsset = {
           id,
           type: 'image',
           status: 'success',
           file: `assets/${uniqueFileName}`,
-          originalName: file.originalname,
+          originalName: displayName,
           size_bytes: file.size,
           uploaded_at: new Date().toISOString(),
         };
@@ -315,7 +319,7 @@ router.post('/posts/:slug/assets/upload', async (req: Request, res: Response) =>
         results.push({
           id,
           file: manifestAsset.file,
-          originalName: file.originalname,
+          originalName: displayName,
           size_bytes: file.size,
         });
 
@@ -436,6 +440,173 @@ router.get('/posts/:slug/assets/file/:filename', async (req: Request, res: Respo
   } catch (err) {
     console.error('[GET /posts/:slug/assets/file/:filename] Error:', err);
     return res.status(500).json({ error: 'Failed to serve asset file' });
+  }
+});
+
+// PATCH /api/posts/:slug/assets/:assetId/rename - Rename an asset
+router.patch('/posts/:slug/assets/:assetId/rename', express.json(), async (req: Request, res: Response) => {
+  try {
+    const repoRoot = getRepoRoot(req);
+    const { slug, assetId } = req.params;
+    const { name } = req.body;
+
+    if (!validateSlug(slug)) {
+      return res.status(400).json({ error: 'Invalid slug' });
+    }
+
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'Name is required' });
+    }
+
+    const newSafeName = sanitizeFilename(name.trim());
+
+    const collectDirRelativePath = path.join('output', 'collect', slug);
+    const assetsDirRelativePath = path.join(collectDirRelativePath, 'assets');
+    const assetsManifestRelativePath = path.join(collectDirRelativePath, 'assets.json');
+
+    const assetsDirPath = validateFilePath(repoRoot, assetsDirRelativePath);
+    const assetsManifestPath = validateFilePath(repoRoot, assetsManifestRelativePath);
+
+    if (!assetsDirPath || !assetsManifestPath) {
+      return res.status(400).json({ error: 'Invalid file path' });
+    }
+
+    const result = await withUploadLock(slug, async () => {
+      const manifest = await readAssetManifest(assetsManifestPath, slug);
+      const assetIndex = manifest.assets.findIndex((a: any) => a.id === assetId);
+      if (assetIndex < 0) {
+        return { error: 'Asset not found', status: 404 };
+      }
+
+      const asset = manifest.assets[assetIndex];
+      const oldFilename = asset.file ? path.basename(asset.file) : null;
+      if (!oldFilename) {
+        return { error: 'Asset has no file', status: 400 };
+      }
+
+      // Keep the same extension as the original file
+      const oldExt = path.extname(oldFilename);
+      const newExt = path.extname(newSafeName);
+      const finalName = newExt === oldExt ? newSafeName : path.basename(newSafeName, newExt) + oldExt;
+
+      if (finalName === oldFilename) {
+        return { asset, renamed: false };
+      }
+
+      // Ensure unique name on disk
+      const uniqueName = await ensureUniqueFilename(assetsDirPath, finalName);
+
+      const oldPath = path.join(assetsDirPath, oldFilename);
+      const newPath = path.join(assetsDirPath, uniqueName);
+
+      if (await fs.pathExists(oldPath)) {
+        await fs.rename(oldPath, newPath);
+      }
+
+      asset.file = `assets/${uniqueName}`;
+      asset.originalName = name.trim();
+      manifest.collected_at = new Date().toISOString();
+      await fs.writeJSON(assetsManifestPath, manifest, { spaces: 2 });
+
+      return { asset, renamed: true };
+    });
+
+    if ('error' in result) {
+      return res.status(result.status).json({ error: result.error });
+    }
+
+    return res.json({ success: true, asset: result.asset, renamed: result.renamed });
+  } catch (err) {
+    console.error('[PATCH /posts/:slug/assets/:assetId/rename] Error:', err);
+    return res.status(500).json({ error: 'Failed to rename asset' });
+  }
+});
+
+// --- Metadata endpoints ---
+
+function deepMergeMetadata(target: Record<string, any>, source: Record<string, any>): Record<string, any> {
+  for (const key of Object.keys(source)) {
+    // Sessions: upsert by started_at to prevent duplicates from repeated flushes
+    if (key === 'sessions' && Array.isArray(target[key]) && Array.isArray(source[key])) {
+      for (const newSession of source[key]) {
+        const existingIdx = target[key].findIndex(
+          (s: any) => s.started_at === newSession.started_at
+        );
+        if (existingIdx >= 0) {
+          target[key][existingIdx] = newSession;
+        } else {
+          target[key].push(newSession);
+        }
+      }
+    // Known append-arrays: stage_transitions, files, pipeline_jobs
+    } else if (
+      ['stage_transitions', 'files', 'pipeline_jobs'].includes(key) &&
+      Array.isArray(target[key]) && Array.isArray(source[key])
+    ) {
+      target[key] = [...target[key], ...source[key]];
+    // Recurse into nested objects
+    } else if (
+      source[key] && typeof source[key] === 'object' && !Array.isArray(source[key]) &&
+      target[key] && typeof target[key] === 'object' && !Array.isArray(target[key])
+    ) {
+      target[key] = deepMergeMetadata(target[key], source[key]);
+    // Scalars and everything else: overwrite
+    } else {
+      target[key] = source[key];
+    }
+  }
+  return target;
+}
+
+// POST /api/posts/:slug/metadata - Merge metadata fragment
+router.post('/posts/:slug/metadata', express.json(), async (req: Request, res: Response) => {
+  try {
+    const repoRoot = getRepoRoot(req);
+    const { slug } = req.params;
+    const fragment = req.body;
+
+    if (!validateSlug(slug)) {
+      return res.status(400).json({ error: 'Invalid slug' });
+    }
+
+    const metadataDir = path.join(repoRoot, 'output', 'metadata', slug);
+    const metadataPath = path.join(metadataDir, 'metadata.json');
+
+    await fs.ensureDir(metadataDir);
+
+    let current: Record<string, any> = { slug };
+    if (await fs.pathExists(metadataPath)) {
+      try {
+        current = await fs.readJSON(metadataPath);
+      } catch { /* start fresh */ }
+    }
+
+    const merged = deepMergeMetadata(current, fragment);
+    await fs.writeJSON(metadataPath, merged, { spaces: 2 });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[POST /posts/:slug/metadata] Error:', err);
+    res.status(500).json({ error: 'Failed to update metadata' });
+  }
+});
+
+// GET /api/posts/:slug/metadata - Read metadata
+router.get('/posts/:slug/metadata', async (req: Request, res: Response) => {
+  try {
+    const repoRoot = getRepoRoot(req);
+    const { slug } = req.params;
+
+    const metadataPath = path.join(repoRoot, 'output', 'metadata', slug, 'metadata.json');
+    if (!await fs.pathExists(metadataPath)) {
+      return res.json({ slug });
+    }
+
+    const metadata = await fs.readJSON(metadataPath);
+    res.json(metadata);
+  } catch (err) {
+    console.error('[GET /posts/:slug/metadata] Error:', err);
+    res.status(500).json({ error: 'Failed to read metadata' });
   }
 });
 

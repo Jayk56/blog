@@ -4,11 +4,12 @@ import { useWebSocket } from '../lib/ws'
 
 interface ReferencePanelProps {
   slug: string
+  stage?: string
 }
 
-type TabType = 'outline' | 'transcript' | 'notes'
+type TabType = 'outline' | 'transcript' | 'notes' | 'review'
 
-export default function ReferencePanel({ slug }: ReferencePanelProps) {
+export default function ReferencePanel({ slug, stage }: ReferencePanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>('outline')
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(false)
@@ -22,7 +23,19 @@ export default function ReferencePanel({ slug }: ReferencePanelProps) {
     outline: `output/outline/${slug}/outline.md`,
     transcript: `output/transcribe/${slug}/transcript.md`,
     notes: `audio-notes/${slug}/notes.md`,
+    review: `output/review/${slug}/review.md`,
   }
+
+  // Show the review tab when the post is at review stage or later
+  const reviewStages = ['review', 'collect', 'publish']
+  const showReviewTab = stage ? reviewStages.includes(stage) : false
+
+  // Auto-switch to review tab when entering review stage
+  useEffect(() => {
+    if (showReviewTab && activeTab === 'outline') {
+      setActiveTab('review')
+    }
+  }, [showReviewTab])
 
   const loadContent = async () => {
     try {
@@ -98,13 +111,19 @@ export default function ReferencePanel({ slug }: ReferencePanelProps) {
         return 'No transcript yet. Run the transcribe stage to generate it.'
       case 'notes':
         return 'No notes yet. Start typing to add notes.'
+      case 'review':
+        return 'No review yet. Run the review agent to generate feedback.'
     }
   }
+
+  const availableTabs: TabType[] = showReviewTab
+    ? ['review', 'outline', 'transcript', 'notes']
+    : ['outline', 'transcript', 'notes']
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex border-b border-gray-700">
-        {(['outline', 'transcript', 'notes'] as const).map((tab) => (
+        {availableTabs.map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}

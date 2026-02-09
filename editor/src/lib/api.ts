@@ -98,6 +98,18 @@ export async function fetchJobStatus(jobId: string): Promise<PipelineJob> {
   return response.json()
 }
 
+export async function postMetadata(
+  slug: string,
+  fragment: Record<string, unknown>
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/posts/${slug}/metadata`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fragment),
+  })
+  if (!response.ok) throw new Error('Failed to post metadata')
+}
+
 export async function uploadAssets(
   slug: string,
   files: File[]
@@ -115,6 +127,25 @@ export async function uploadAssets(
   if (!response.ok) {
     const err = await response.json().catch(() => ({ error: 'Upload failed' }))
     throw new Error(err.error || 'Upload failed')
+  }
+
+  return response.json()
+}
+
+export async function renameAsset(
+  slug: string,
+  assetId: string,
+  name: string
+): Promise<{ success: boolean; asset: any; renamed: boolean }> {
+  const response = await fetch(`${API_BASE}/posts/${slug}/assets/${assetId}/rename`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Rename failed' }))
+    throw new Error(err.error || 'Rename failed')
   }
 
   return response.json()

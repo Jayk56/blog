@@ -1,16 +1,12 @@
 #!/bin/bash
-# preprocess.sh — Run the preprocess agent via Claude Code CLI
+# review.sh — Run the review agent via Claude Code CLI
 #
-# Reads the transcript + notes + manifest for a post, sends them to the
-# claude CLI in print mode (-p) with the preprocess prompt, and saves
-# the outline. Uses your existing Claude Code credentials — no extra
-# API key or costs.
+# Reads the draft + transcript + outline for a post, sends them to the
+# claude CLI in print mode (-p) with the review prompt, and saves the
+# reviewed output with inline comments, callouts, readiness score, and
+# collect-stage markers ([SCREENSHOT:], [EMBED:], etc.).
 #
-# Usage: preprocess.sh <slug> [--update]
-#
-# Flags:
-#   --update  Update an existing outline with new transcript content
-#             (uses update-preprocess.md prompt, does NOT advance manifest)
+# Usage: review.sh <slug>
 #
 # Requires: claude CLI installed and authenticated
 
@@ -40,32 +36,33 @@ if [[ $# -lt 1 ]]; then
 fi
 
 SLUG="$1"
-UPDATE_MODE=false
-if [[ "${2:-}" == "--update" ]]; then
-    UPDATE_MODE=true
-fi
 
 # Load metadata helper
 source "${REPO_ROOT}/pipeline/scripts/lib/metadata.sh"
 
+DRAFT_PATH="${OUTPUT_DIR}/draft/${SLUG}/draft.md"
 TRANSCRIPT_PATH="${OUTPUT_DIR}/transcribe/${SLUG}/transcript.md"
+OUTLINE_PATH="${OUTPUT_DIR}/outline/${SLUG}/outline.md"
 MANIFEST_PATH="${AUDIO_NOTES_DIR}/${SLUG}/manifest.json"
-NOTES_PATH="${AUDIO_NOTES_DIR}/${SLUG}/notes.md"
-OUTLINE_DIR="${OUTPUT_DIR}/outline/${SLUG}"
-OUTLINE_PATH="${OUTLINE_DIR}/outline.md"
+PROMPT_PATH="${PIPELINE_DIR}/prompts/review.md"
+REVIEW_DIR="${OUTPUT_DIR}/review/${SLUG}"
+REVIEW_PATH="${REVIEW_DIR}/review.md"
 
-# Use the appropriate prompt based on mode
-if [[ "$UPDATE_MODE" == true ]]; then
-    PROMPT_PATH="${PIPELINE_DIR}/prompts/update-preprocess.md"
-    echo -e "${BLUE}=== Update Outline: ${SLUG} ===${NC}"
-else
-    PROMPT_PATH="${PIPELINE_DIR}/prompts/preprocess.md"
-    echo -e "${BLUE}=== Preprocess: ${SLUG} ===${NC}"
-fi
+echo -e "${BLUE}=== Review: ${SLUG} ===${NC}"
 
 # Validate inputs exist
+if [[ ! -f "$DRAFT_PATH" ]]; then
+    echo -e "${RED}Error: Draft not found at ${DRAFT_PATH}${NC}"
+    exit 1
+fi
+
 if [[ ! -f "$TRANSCRIPT_PATH" ]]; then
     echo -e "${RED}Error: Transcript not found at ${TRANSCRIPT_PATH}${NC}"
+    exit 1
+fi
+
+if [[ ! -f "$OUTLINE_PATH" ]]; then
+    echo -e "${RED}Error: Outline not found at ${OUTLINE_PATH}${NC}"
     exit 1
 fi
 
@@ -75,86 +72,65 @@ if [[ ! -f "$MANIFEST_PATH" ]]; then
 fi
 
 if [[ ! -f "$PROMPT_PATH" ]]; then
-    echo -e "${RED}Error: Preprocess prompt not found at ${PROMPT_PATH}${NC}"
+    echo -e "${RED}Error: Review prompt not found at ${PROMPT_PATH}${NC}"
     exit 1
 fi
 
 # Read inputs
+DRAFT=$(cat "$DRAFT_PATH")
 TRANSCRIPT=$(cat "$TRANSCRIPT_PATH")
+OUTLINE=$(cat "$OUTLINE_PATH")
 MANIFEST=$(cat "$MANIFEST_PATH")
-CATEGORY=$(jq -r '.category // "unknown"' "$MANIFEST_PATH")
-
-NOTES=""
-if [[ -f "$NOTES_PATH" ]]; then
-    NOTES=$(cat "$NOTES_PATH")
-fi
 
 # Build the user message with all context
-USER_MESSAGE="Please preprocess the following content for my blog post.
+USER_MESSAGE="Please review the following blog post draft.
 
 ## Manifest
 \`\`\`json
 ${MANIFEST}
 \`\`\`
 
-## Category
-${CATEGORY}
+## Draft
+${DRAFT}
 
 ## Transcript
-${TRANSCRIPT}"
+${TRANSCRIPT}
 
-if [[ -n "$NOTES" ]]; then
-    USER_MESSAGE="${USER_MESSAGE}
-
-## Notes
-${NOTES}"
-fi
-
-# In update mode, include the existing outline for context
-if [[ "$UPDATE_MODE" == true ]]; then
-    if [[ ! -f "$OUTLINE_PATH" ]]; then
-        echo -e "${RED}Error: --update requires an existing outline at ${OUTLINE_PATH}${NC}"
-        exit 1
-    fi
-    EXISTING_OUTLINE=$(cat "$OUTLINE_PATH")
-    USER_MESSAGE="${USER_MESSAGE}
-
-## Existing Outline
-${EXISTING_OUTLINE}"
-fi
+## Outline
+${OUTLINE}"
 
 echo "Running claude CLI in print mode (this may take 30-60 seconds)..."
 
 # Create output directory
-mkdir -p "$OUTLINE_DIR"
+mkdir -p "$REVIEW_DIR"
 
-PREPROCESS_START=$(date +%s)
+REVIEW_START=$(date +%s)
 
 # Run claude in print mode with JSON output to capture metadata:
 #   -p                    = non-interactive, print response to stdout
-#   --system-prompt-file  = use our preprocess prompt as the system instructions
+#   --system-prompt-file  = use our review prompt as the system instructions
 #   --output-format json  = JSON wrapper with token usage and cost data
 #   --allowedTools ""     = no tool use — all context is piped in, just generate text
 CLAUDE_JSON=$(echo "$USER_MESSAGE" | claude -p \
     --system-prompt-file "$PROMPT_PATH" \
     --output-format json \
     --allowedTools "" \
-    2>"${OUTLINE_DIR}/claude-stderr.log")
+    2>"${REVIEW_DIR}/claude-stderr.log")
 
 # Save full Claude response for debugging/reference
-echo "$CLAUDE_JSON" > "${OUTLINE_DIR}/claude-response.json"
+echo "$CLAUDE_JSON" > "${REVIEW_DIR}/claude-response.json"
 
-# Extract the actual outline content from the JSON wrapper
-OUTLINE_CONTENT=$(echo "$CLAUDE_JSON" | jq -r '.result // empty')
+# Extract the actual review content from the JSON wrapper
+REVIEW_CONTENT=$(echo "$CLAUDE_JSON" | jq -r '.result // empty')
 
-if [[ -z "$OUTLINE_CONTENT" ]]; then
+if [[ -z "$REVIEW_CONTENT" ]]; then
     echo -e "${RED}Error: Empty response from claude CLI${NC}"
-    echo "Check ${OUTLINE_DIR}/claude-response.json for details"
+    echo "Check ${REVIEW_DIR}/claude-response.json for details"
     exit 1
 fi
 
-PREPROCESS_END=$(date +%s)
-PREPROCESS_DURATION=$((PREPROCESS_END - PREPROCESS_START))
+REVIEW_END=$(date +%s)
+REVIEW_DURATION=$((REVIEW_END - REVIEW_START))
 
 # Extract metadata from Claude CLI JSON response
 DURATION_API_MS=$(echo "$CLAUDE_JSON" | jq '.duration_api_ms // 0')
@@ -166,9 +142,9 @@ CACHE_CREATION=$(echo "$CLAUDE_JSON" | jq '.usage.cache_creation_input_tokens //
 CACHE_READ=$(echo "$CLAUDE_JSON" | jq '.usage.cache_read_input_tokens // 0')
 
 metadata_merge "$SLUG" "$(jq -n \
-    --arg started "$(date -u -r "$PREPROCESS_START" +'%Y-%m-%dT%H:%M:%SZ')" \
+    --arg started "$(date -u -r "$REVIEW_START" +'%Y-%m-%dT%H:%M:%SZ')" \
     --arg completed "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
-    --argjson dur "$PREPROCESS_DURATION" \
+    --argjson dur "$REVIEW_DURATION" \
     --argjson api_ms "$DURATION_API_MS" \
     --arg model "$MODEL" \
     --argjson input "$INPUT_TOKENS" \
@@ -177,7 +153,7 @@ metadata_merge "$SLUG" "$(jq -n \
     --argjson cache_read "$CACHE_READ" \
     --argjson cost "$COST_USD" \
     '{
-        preprocess: {
+        review: {
             started_at: $started,
             completed_at: $completed,
             duration_seconds: $dur,
@@ -193,24 +169,24 @@ metadata_merge "$SLUG" "$(jq -n \
 
 echo -e "${GREEN}✓ Metadata saved (cost: \$$(printf '%.4f' "$COST_USD"), tokens: ${INPUT_TOKENS}in/${OUTPUT_TOKENS}out)${NC}"
 
-# Save the outline
-echo "$OUTLINE_CONTENT" > "$OUTLINE_PATH"
+# Save the review
+echo "$REVIEW_CONTENT" > "$REVIEW_PATH"
 
-echo -e "${GREEN}✓ Outline saved: ${OUTLINE_PATH}${NC}"
+echo -e "${GREEN}✓ Review saved: ${REVIEW_PATH}${NC}"
 
-# Advance the manifest (only for initial preprocess, not updates)
-if [[ "$UPDATE_MODE" == true ]]; then
-    echo -e "${GREEN}✓ Outline updated (manifest stage unchanged)${NC}"
-else
-    MANIFEST_UPDATED=$(jq \
-        --arg stage "preprocess" \
-        --arg lastModified "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
-        '.stage = $stage | .lastModified = $lastModified' \
-        "$MANIFEST_PATH")
-    echo "$MANIFEST_UPDATED" > "$MANIFEST_PATH"
+# Advance the manifest
+PREV_STAGE=$(jq -r '.stage // "draft"' "$MANIFEST_PATH" 2>/dev/null)
+MANIFEST_UPDATED=$(jq \
+    --arg stage "review" \
+    --arg lastModified "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    '.stage = $stage | .lastModified = $lastModified' \
+    "$MANIFEST_PATH")
+echo "$MANIFEST_UPDATED" > "$MANIFEST_PATH"
 
-    echo -e "${GREEN}✓ Manifest updated: stage → preprocess${NC}"
-    echo
-    echo -e "${BLUE}Next: Review the outline, then${NC}"
-    echo "  make advance SLUG=${SLUG}   (to move to draft)"
-fi
+# Log stage transition to metadata
+metadata_log_transition "$SLUG" "$PREV_STAGE" "review"
+
+echo -e "${GREEN}✓ Manifest updated: stage → review (was ${PREV_STAGE})${NC}"
+echo
+echo -e "${BLUE}Review complete! Open the editor to see inline comments and callouts.${NC}"
+echo "  Next: Address callouts, then run 'make advance SLUG=${SLUG}' to move to collect"

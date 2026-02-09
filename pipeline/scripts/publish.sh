@@ -24,6 +24,10 @@ if [[ $# -lt 1 ]]; then
 fi
 
 SLUG="$1"
+
+# Load metadata helper
+source "${REPO_ROOT}/pipeline/scripts/lib/metadata.sh"
+
 DRAFT_MD="${OUTPUT_DIR}/draft/${SLUG}/draft.md"
 ASSETS_JSON="${OUTPUT_DIR}/collect/${SLUG}/assets.json"
 ASSETS_DIR="${OUTPUT_DIR}/collect/${SLUG}/assets"
@@ -67,18 +71,122 @@ cp "$DRAFT_MD" "${BUNDLE_DIR}/index.md"
 
 echo "Created: ${BUNDLE_DIR}/index.md"
 
-# --- Copy collected assets into the bundle ---
+# --- Copy only referenced assets into the bundle ---
+
+# Build list of filenames actually referenced in the draft
+# 1) Directly via figure shortcodes: {{< figure src="filename.ext" ... >}}
+# 2) Indirectly via [SCREENSHOT] markers that map to assets in assets.json
+REFERENCED_FILES=()
+
+# Parse figure src= references
+while IFS= read -r src; do
+    [[ -n "$src" ]] && REFERENCED_FILES+=("$src")
+done < <(grep -oE 'src="[^"]+"' "$DRAFT_MD" 2>/dev/null | sed 's/src="//;s/"//')
+
+# Parse SCREENSHOT markers → map to asset filenames via assets.json
+SCREENSHOT_MAP_IDX=0
+while IFS= read -r _; do
+    SCREENSHOT_MAP_IDX=$((SCREENSHOT_MAP_IDX + 1))
+    MAPPED_FILE=$(jq -r --arg id "screenshot-${SCREENSHOT_MAP_IDX}" \
+        '.assets[] | select(.id == $id) | .file' "$ASSETS_JSON" 2>/dev/null || true)
+    if [[ -n "$MAPPED_FILE" && "$MAPPED_FILE" != "null" ]]; then
+        REFERENCED_FILES+=("$(basename "$MAPPED_FILE")")
+    fi
+done < <(grep '\[SCREENSHOT:' "$DRAFT_MD" 2>/dev/null || true)
+
+# Parse EMBED markers → map to asset filenames via assets.json
+EMBED_MAP_IDX=0
+while IFS= read -r _; do
+    EMBED_MAP_IDX=$((EMBED_MAP_IDX + 1))
+    MAPPED_FILE=$(jq -r --arg id "embed-${EMBED_MAP_IDX}" \
+        '.assets[] | select(.id == $id) | .file' "$ASSETS_JSON" 2>/dev/null || true)
+    if [[ -n "$MAPPED_FILE" && "$MAPPED_FILE" != "null" ]]; then
+        REFERENCED_FILES+=("$(basename "$MAPPED_FILE")")
+    fi
+done < <(grep '\[EMBED:' "$DRAFT_MD" 2>/dev/null || true)
+
+# Deduplicate
+REFERENCED_UNIQUE=($(printf '%s\n' "${REFERENCED_FILES[@]}" | sort -u))
 
 ASSET_COUNT=0
+SKIPPED_COUNT=0
 if [[ -d "$ASSETS_DIR" ]]; then
     for asset_file in "${ASSETS_DIR}"/*; do
         [[ -f "$asset_file" ]] || continue
-        cp "$asset_file" "${BUNDLE_DIR}/"
-        ASSET_COUNT=$((ASSET_COUNT + 1))
+        BASENAME=$(basename "$asset_file")
+
+        # Check if this file is referenced
+        IS_REFERENCED=false
+        for ref in "${REFERENCED_UNIQUE[@]}"; do
+            if [[ "$ref" == "$BASENAME" ]]; then
+                IS_REFERENCED=true
+                break
+            fi
+        done
+
+        if $IS_REFERENCED; then
+            cp "$asset_file" "${BUNDLE_DIR}/"
+            ASSET_COUNT=$((ASSET_COUNT + 1))
+        else
+            SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+            echo -e "  ${YELLOW}Skipped: ${BASENAME} (not referenced in draft)${NC}"
+        fi
     done
 fi
 
-echo "Copied: ${ASSET_COUNT} assets into page bundle"
+echo "Copied: ${ASSET_COUNT} referenced assets into page bundle (skipped ${SKIPPED_COUNT} unreferenced)"
+
+# --- Optimize large images ---
+# Convert PNGs over 200KB to JPEG for smaller page bundles
+
+IMAGE_SIZE_THRESHOLD=204800  # 200KB in bytes
+CONVERTED_COUNT=0
+
+for img_file in "${BUNDLE_DIR}"/*.png; do
+    [[ -f "$img_file" ]] || continue
+    FSIZE=$(stat -f%z "$img_file" 2>/dev/null || stat -c%s "$img_file" 2>/dev/null || echo "0")
+
+    if [[ "$FSIZE" -gt "$IMAGE_SIZE_THRESHOLD" ]]; then
+        PNG_NAME=$(basename "$img_file")
+        JPG_NAME="${PNG_NAME%.png}.jpg"
+        JPG_PATH="${BUNDLE_DIR}/${JPG_NAME}"
+
+        # Convert: prefer sips (macOS native), fall back to ImageMagick convert
+        if command -v sips &>/dev/null; then
+            sips -s format jpeg -s formatOptions 85 "$img_file" --out "$JPG_PATH" &>/dev/null
+        elif command -v convert &>/dev/null; then
+            convert "$img_file" -quality 85 "$JPG_PATH" 2>/dev/null
+        else
+            echo -e "  ${YELLOW}No converter for ${PNG_NAME} (install sips or ImageMagick)${NC}"
+            continue
+        fi
+
+        if [[ -f "$JPG_PATH" ]]; then
+            NEW_SIZE=$(stat -f%z "$JPG_PATH" 2>/dev/null || stat -c%s "$JPG_PATH" 2>/dev/null || echo "0")
+            # Only keep the JPEG if it's actually smaller
+            if [[ "$NEW_SIZE" -lt "$FSIZE" ]]; then
+                rm "$img_file"
+                # Update references in index.md
+                if [[ "$(uname)" == "Darwin" ]]; then
+                    sed -i '' "s/${PNG_NAME}/${JPG_NAME}/g" "$BUNDLE_MD"
+                else
+                    sed -i "s/${PNG_NAME}/${JPG_NAME}/g" "$BUNDLE_MD"
+                fi
+                SAVINGS=$(( (FSIZE - NEW_SIZE) / 1024 ))
+                echo -e "  ${GREEN}Converted: ${PNG_NAME} → ${JPG_NAME} (saved ${SAVINGS}KB)${NC}"
+                CONVERTED_COUNT=$((CONVERTED_COUNT + 1))
+            else
+                # JPEG is larger (rare for photos, common for screenshots with text)
+                rm "$JPG_PATH"
+                echo -e "  Kept PNG: ${PNG_NAME} (JPEG was larger)"
+            fi
+        fi
+    fi
+done
+
+if [[ "$CONVERTED_COUNT" -gt 0 ]]; then
+    echo "Converted: ${CONVERTED_COUNT} images to JPEG"
+fi
 
 # --- Transform markers in index.md ---
 
@@ -169,6 +277,76 @@ if [[ -f "$MANIFEST" ]]; then
         "$MANIFEST")
     echo "$MANIFEST_UPDATED" > "$MANIFEST"
 fi
+
+# --- Metadata ---
+
+# Calculate bundle size
+BUNDLE_SIZE=0
+for f in "${BUNDLE_DIR}"/*; do
+    [[ -f "$f" ]] || continue
+    FSIZE=$(stat -f%z "$f" 2>/dev/null || stat -c%s "$f" 2>/dev/null || echo "0")
+    BUNDLE_SIZE=$((BUNDLE_SIZE + FSIZE))
+done
+
+metadata_merge "$SLUG" "$(jq -n \
+    --arg published "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    --argjson size "$BUNDLE_SIZE" \
+    --argjson assets "$ASSET_COUNT" \
+    '{
+        publish: {
+            published_at: $published,
+            bundle_size_bytes: $size,
+            asset_count: $assets
+        }
+    }')"
+
+# Compute summary from accumulated metadata
+CURRENT_META=$(metadata_read "$SLUG")
+
+TOTAL_AUTOMATION=$(echo "$CURRENT_META" | jq '
+    [.transcription.duration_seconds // 0,
+     .preprocess.duration_seconds // 0,
+     .review.duration_seconds // 0,
+     .collect.duration_seconds // 0] | add')
+
+TOTAL_COST=$(echo "$CURRENT_META" | jq '
+    [.transcription.estimated_cost_usd // 0,
+     .preprocess.cost_usd // 0,
+     .review.cost_usd // 0] | add')
+
+TRANSCRIPT_WORDS=$(echo "$CURRENT_META" | jq '.transcription.word_count // 0')
+FINAL_WORDS=$(cat "${BUNDLE_DIR}/index.md" | wc -w | tr -d ' ')
+
+if [[ "$TRANSCRIPT_WORDS" -gt 0 ]]; then
+    EXPANSION=$(echo "scale=2; $FINAL_WORDS / $TRANSCRIPT_WORDS" | bc)
+else
+    EXPANSION="0"
+fi
+
+TOTAL_EDITING=$(echo "$CURRENT_META" | jq '
+    [.editing.sessions[]? |
+        (((.last_save_at // .started_at) | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) - (.started_at | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601)) / 60
+    ] | add // 0 | round')
+
+metadata_merge "$SLUG" "$(jq -n \
+    --argjson auto "$TOTAL_AUTOMATION" \
+    --argjson edit "$TOTAL_EDITING" \
+    --argjson cost "$TOTAL_COST" \
+    --argjson tw "$TRANSCRIPT_WORDS" \
+    --argjson fw "$FINAL_WORDS" \
+    --arg ratio "$EXPANSION" \
+    '{
+        summary: {
+            total_automation_seconds: $auto,
+            total_estimated_editing_minutes: $edit,
+            total_estimated_cost_usd: $cost,
+            transcript_words: $tw,
+            final_words: $fw,
+            expansion_ratio: ($ratio | tonumber)
+        }
+    }')"
+
+echo -e "${GREEN}✓ Metadata and summary saved${NC}"
 
 # --- Summary ---
 

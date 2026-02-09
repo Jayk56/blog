@@ -30,6 +30,9 @@ SLUG="$1"
 POST_DIR="${AUDIO_NOTES_DIR}/${SLUG}"
 MANIFEST_PATH="${POST_DIR}/manifest.json"
 
+# Load metadata helper
+source "${REPO_ROOT}/pipeline/scripts/lib/metadata.sh"
+
 # Validate post exists
 if [[ ! -d "${POST_DIR}" ]]; then
     echo -e "${RED}Error: Post '${SLUG}' not found${NC}"
@@ -104,6 +107,9 @@ MANIFEST_UPDATED=$(jq \
     "${MANIFEST_PATH}")
 
 echo "$MANIFEST_UPDATED" > "${MANIFEST_PATH}"
+
+# Log stage transition to metadata
+metadata_log_transition "$SLUG" "$CURRENT_STAGE" "$NEXT"
 
 echo -e "${GREEN}✓ Advanced '${SLUG}' from '${CURRENT_STAGE}' to '${NEXT}'${NC}"
 echo

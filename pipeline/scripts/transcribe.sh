@@ -40,6 +40,9 @@ SLUG="$1"
 POST_DIR="${AUDIO_NOTES_DIR}/${SLUG}"
 MANIFEST_PATH="${POST_DIR}/manifest.json"
 
+# Load metadata helper
+source "${REPO_ROOT}/pipeline/scripts/lib/metadata.sh"
+
 # Validate post exists
 if [[ ! -d "${POST_DIR}" ]]; then
     echo -e "${RED}Error: Post '${SLUG}' not found in ${AUDIO_NOTES_DIR}${NC}"
@@ -78,6 +81,11 @@ mkdir -p "${OUTPUT_DIR}/${SLUG}"
 # Transcribe each file
 COMBINED_TRANSCRIPT=""
 FILE_COUNT=0
+TRANSCRIBE_START=$(date +%s)
+TOTAL_AUDIO_DURATION=0
+TOTAL_AUDIO_SIZE=0
+TOTAL_WORD_COUNT=0
+AUDIO_FILE_METADATA="[]"
 
 for audio_file in "${AUDIO_FILES[@]}"; do
     FILE_COUNT=$((FILE_COUNT + 1))
@@ -115,6 +123,21 @@ for audio_file in "${AUDIO_FILES[@]}"; do
     INDIVIDUAL_PATH="${OUTPUT_DIR}/${SLUG}/${FILENAME%.*}.json"
     echo "$RESPONSE" | jq '.' > "${INDIVIDUAL_PATH}" 2>/dev/null || true
 
+    # Extract metadata from response
+    AUDIO_DURATION=$(echo "$RESPONSE" | jq '[.words[-1].end // 0] | max')
+    AUDIO_SIZE=$(stat -f%z "$audio_file" 2>/dev/null || stat -c%s "$audio_file" 2>/dev/null || echo "0")
+    FILE_WORD_COUNT=$(echo "$TRANSCRIPT" | wc -w | tr -d ' ')
+
+    TOTAL_AUDIO_DURATION=$(echo "$TOTAL_AUDIO_DURATION + $AUDIO_DURATION" | bc)
+    TOTAL_AUDIO_SIZE=$((TOTAL_AUDIO_SIZE + AUDIO_SIZE))
+    TOTAL_WORD_COUNT=$((TOTAL_WORD_COUNT + FILE_WORD_COUNT))
+
+    AUDIO_FILE_METADATA=$(echo "$AUDIO_FILE_METADATA" | jq \
+        --arg name "$FILENAME" \
+        --argjson dur "$AUDIO_DURATION" \
+        --argjson size "$AUDIO_SIZE" \
+        '. + [{"name": $name, "duration_seconds": $dur, "size_bytes": $size}]')
+
     # Add to combined transcript with file header
     COMBINED_TRANSCRIPT+="## ${FILENAME}"$'\n'
     COMBINED_TRANSCRIPT+="${TRANSCRIPT}"$'\n\n'
@@ -139,6 +162,29 @@ EOF
 echo
 echo -e "${GREEN}✓ Combined transcript saved${NC}"
 echo "  ${TRANSCRIPT_PATH}"
+
+# Write metadata
+TRANSCRIBE_END=$(date +%s)
+TRANSCRIBE_DURATION=$((TRANSCRIBE_END - TRANSCRIBE_START))
+ESTIMATED_COST=$(echo "scale=4; $TOTAL_AUDIO_DURATION * 0.0001" | bc)
+
+metadata_merge "$SLUG" "$(jq -n \
+    --argjson file_count "${#AUDIO_FILES[@]}" \
+    --argjson total_dur "$TOTAL_AUDIO_DURATION" \
+    --argjson total_size "$TOTAL_AUDIO_SIZE" \
+    --argjson files "$AUDIO_FILE_METADATA" \
+    --arg started "$(date -u -r "$TRANSCRIBE_START" +'%Y-%m-%dT%H:%M:%SZ')" \
+    --arg completed "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    --argjson dur "$TRANSCRIBE_DURATION" \
+    --argjson words "$TOTAL_WORD_COUNT" \
+    --arg lang "eng" \
+    --argjson cost "$ESTIMATED_COST" \
+    '{
+        audio: { file_count: $file_count, total_duration_seconds: $total_dur, total_size_bytes: $total_size, files: $files },
+        transcription: { started_at: $started, completed_at: $completed, duration_seconds: $dur, word_count: $words, language: $lang, estimated_cost_usd: $cost }
+    }')"
+
+echo -e "${GREEN}✓ Metadata saved${NC}"
 
 # Update manifest.json
 MANIFEST_UPDATED=$(jq \

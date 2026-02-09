@@ -3,10 +3,11 @@
 # auto-transcribe.sh — cron-friendly script that finds audio-notes folders
 # with audio files, ensures they have a manifest, and transcribes them.
 #
-# Three passes:
+# Four passes:
 #   Pass 1:   Folders at stage "capture" → full transcription
 #   Pass 1.5: Any folder with new audio files → incremental transcription
 #   Pass 2:   Posts needing preprocessing or outline updates
+#   Pass 3:   Posts at "draft" stage with a draft but no review → auto-review
 #
 # This lets the Apple Shortcut skip manifest creation entirely — just drop
 # audio into a slug folder and this script handles the rest.
@@ -207,3 +208,47 @@ for post_dir in "${AUDIO_NOTES_DIR}"/*/; do
 done
 
 echo "[$(date '+%Y-%m-%d %H:%M')] Pass 2 done. New outlines: ${PREPROCESSED}, Updated: ${UPDATED}"
+
+# =============================================================================
+# Pass 3: Auto-review — run Claude review agent on draft-stage posts
+# =============================================================================
+# Posts at the "draft" stage that have a draft.md but no review.md get an
+# automated review with inline comments, callouts, readiness score, and
+# collect-stage markers.
+
+REVIEWED=0
+
+for post_dir in "${AUDIO_NOTES_DIR}"/*/; do
+    [[ -d "$post_dir" ]] || continue
+    SLUG=$(basename "$post_dir")
+    MANIFEST="${post_dir}/manifest.json"
+
+    [[ -f "$MANIFEST" ]] || continue
+
+    STAGE=$(jq -r '.stage // "unknown"' "$MANIFEST" 2>/dev/null)
+    [[ "$STAGE" == "draft" ]] || continue
+
+    DRAFT="${REPO_ROOT}/output/draft/${SLUG}/draft.md"
+    REVIEW="${REPO_ROOT}/output/review/${SLUG}/review.md"
+
+    # Only review if draft exists
+    [[ -f "$DRAFT" ]] || continue
+
+    # Case 1: No review yet → generate review
+    if [[ ! -f "$REVIEW" ]]; then
+        echo "[$(date '+%Y-%m-%d %H:%M')] Reviewing: ${SLUG}"
+        bash "${SCRIPT_DIR}/review.sh" "$SLUG" && REVIEWED=$((REVIEWED + 1)) || echo "  ERROR: review failed for ${SLUG}"
+        continue
+    fi
+
+    # Case 2: Review exists but draft is newer → re-review
+    DRAFT_MTIME=$(stat -f '%m' "$DRAFT" 2>/dev/null || echo 0)
+    REVIEW_MTIME=$(stat -f '%m' "$REVIEW" 2>/dev/null || echo 0)
+
+    if [[ "$DRAFT_MTIME" -gt "$REVIEW_MTIME" ]]; then
+        echo "[$(date '+%Y-%m-%d %H:%M')] Re-reviewing: ${SLUG} (draft newer than review)"
+        bash "${SCRIPT_DIR}/review.sh" "$SLUG" && REVIEWED=$((REVIEWED + 1)) || echo "  ERROR: review failed for ${SLUG}"
+    fi
+done
+
+echo "[$(date '+%Y-%m-%d %H:%M')] Pass 3 done. Reviews: ${REVIEWED}"

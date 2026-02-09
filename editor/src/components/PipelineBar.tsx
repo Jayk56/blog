@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ChevronUp, ChevronDown, Play } from 'lucide-react'
+import { ChevronUp, ChevronDown, Play, RefreshCw } from 'lucide-react'
 import { runPipeline, fetchJobStatus, Post } from '../lib/api'
 import { subscribe as wsSubscribe } from '../lib/ws'
 import Terminal from './Terminal'
@@ -167,6 +167,31 @@ export default function PipelineBar({
           >
             Terminal
           </button>
+
+          {post.stage === 'review' && (
+            <button
+              onClick={() => handleRunPipeline('review')}
+              disabled={runningJob !== null}
+              className={`btn-sm flex items-center gap-2 border border-blue-500 text-blue-400 hover:bg-blue-500/10 rounded transition ${
+                runningJob ? 'opacity-75 cursor-not-allowed' : ''
+              }`}
+              title="Re-run the review agent on the updated draft"
+            >
+              {runningJob ? (
+                <>
+                  <div className="animate-spin">
+                    <RefreshCw size={16} />
+                  </div>
+                  Reviewing...
+                </>
+              ) : (
+                <>
+                  <RefreshCw size={16} />
+                  Re-review
+                </>
+              )}
+            </button>
+          )}
 
           {nextAction && (
             <button

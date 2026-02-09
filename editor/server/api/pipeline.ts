@@ -2,6 +2,7 @@ import express, { Router, Request, Response } from 'express';
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import fs from 'fs-extra';
 
 const router = Router();
 
@@ -12,9 +13,43 @@ interface Job {
   exitCode?: number;
   output: string[];
   process?: ChildProcess;
+  startedAt?: string;
 }
 
 const jobs = new Map<string, Job>();
+
+// Fire-and-forget: log pipeline job timing to metadata.json
+async function logPipelineJobMetadata(
+  repoRoot: string, slug: string, action: string,
+  jobId: string, startedAt: string, exitCode: number
+) {
+  try {
+    const metadataDir = path.join(repoRoot, 'output', 'metadata', slug);
+    const metadataPath = path.join(metadataDir, 'metadata.json');
+    await fs.ensureDir(metadataDir);
+
+    let current: Record<string, any> = { slug };
+    if (await fs.pathExists(metadataPath)) {
+      try { current = await fs.readJSON(metadataPath); } catch { /* start fresh */ }
+    }
+
+    if (!Array.isArray(current.pipeline_jobs)) {
+      current.pipeline_jobs = [];
+    }
+    current.pipeline_jobs.push({
+      action,
+      job_id: jobId,
+      started_at: startedAt,
+      completed_at: new Date().toISOString(),
+      duration_seconds: Math.round((Date.now() - new Date(startedAt).getTime()) / 1000),
+      exit_code: exitCode,
+    });
+
+    await fs.writeJSON(metadataPath, current, { spaces: 2 });
+  } catch (err) {
+    console.error(`[Pipeline] Failed to log job metadata for ${slug}:`, err);
+  }
+}
 
 // Helper to get repo root from app locals
 function getRepoRoot(req: Request): string {
@@ -33,7 +68,7 @@ function getScriptPath(repoRoot: string, action: string): string | null {
     'increment-transcribe': 'increment-transcribe.sh',
     'preprocess': 'preprocess.sh',
     'draft': 'advance.sh',
-    'review': 'advance.sh',
+    'review': 'review.sh',
     'collect': 'collect.sh',
     'publish': 'publish.sh',
     'advance': 'advance.sh',
@@ -76,6 +111,7 @@ router.post('/posts/:slug/pipeline/:action', async (req: Request, res: Response)
       jobId,
       status: 'running',
       output: [],
+      startedAt: new Date().toISOString(),
     };
 
     jobs.set(jobId, job);
@@ -115,6 +151,7 @@ router.post('/posts/:slug/pipeline/:action', async (req: Request, res: Response)
         broadcast({
           type: 'pipeline-output',
           jobId,
+          slug,
           line,
         });
       }
@@ -139,18 +176,44 @@ router.post('/posts/:slug/pipeline/:action', async (req: Request, res: Response)
       job.exitCode = code || 0;
       job.status = job.exitCode === 0 ? 'completed' : 'failed';
 
-      broadcast({
-        type: 'pipeline-complete',
-        jobId,
-        exitCode: job.exitCode,
-      });
-
       console.log(`[Pipeline] Job ${jobId} completed with exit code ${job.exitCode} | output: ${job.output.join(' | ')}`);
 
-      // Keep job in memory for a bit longer for status queries
-      setTimeout(() => {
-        jobs.delete(jobId);
-      }, 30000); // 30 seconds
+      // Log pipeline job timing to metadata (fire-and-forget)
+      logPipelineJobMetadata(repoRoot, slug, action, jobId, job.startedAt!, job.exitCode);
+
+      // Auto-advance stage after successful collect
+      // collect.sh gathers assets but doesn't advance the manifest stage,
+      // so we chain advance.sh to move review → collect
+      if (job.exitCode === 0 && action === 'collect') {
+        const advancePath = path.join(repoRoot, 'pipeline/scripts/advance.sh');
+        console.log(`[Pipeline] Auto-advancing stage for ${slug} after successful ${action}`);
+        const advanceProc = spawn('bash', [advancePath, slug], {
+          cwd: repoRoot,
+          env: { ...process.env, PATH: `/opt/homebrew/bin:${process.env.PATH}` },
+        });
+        advanceProc.stdout?.on('data', (data) => {
+          const line = data.toString().trim();
+          if (line) {
+            job.output.push(line);
+            broadcast({ type: 'pipeline-output', jobId, slug, line });
+          }
+        });
+        advanceProc.stderr?.on('data', (data) => {
+          console.error(`[Pipeline] advance stderr: ${data.toString().trim()}`);
+        });
+        advanceProc.on('exit', () => {
+          broadcast({ type: 'pipeline-complete', jobId, slug, exitCode: job.exitCode });
+          setTimeout(() => { jobs.delete(jobId); }, 30000);
+        });
+        advanceProc.on('error', (err) => {
+          console.error(`[Pipeline] Auto-advance error:`, err);
+          broadcast({ type: 'pipeline-complete', jobId, slug, exitCode: job.exitCode });
+          setTimeout(() => { jobs.delete(jobId); }, 30000);
+        });
+      } else {
+        broadcast({ type: 'pipeline-complete', jobId, slug, exitCode: job.exitCode });
+        setTimeout(() => { jobs.delete(jobId); }, 30000);
+      }
     });
 
     // Handle process errors
@@ -162,6 +225,7 @@ router.post('/posts/:slug/pipeline/:action', async (req: Request, res: Response)
       broadcast({
         type: 'pipeline-error',
         jobId,
+        slug,
         error: err.message,
       });
 

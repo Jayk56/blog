@@ -88,7 +88,7 @@ export default function Workspace() {
       <div className="workspace-content">
         {leftOpen && (
           <div style={{ width: '25%' }} className="workspace-panel">
-            <ReferencePanel slug={slug} />
+            <ReferencePanel slug={slug} stage={post.stage} />
           </div>
         )}
 

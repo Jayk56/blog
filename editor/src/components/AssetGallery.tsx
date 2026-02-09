@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
-import { ImagePlus, Upload } from 'lucide-react'
-import { readFile, uploadAssets } from '../lib/api'
+import { ImagePlus, Pencil, Upload } from 'lucide-react'
+import { readFile, renameAsset, uploadAssets } from '../lib/api'
 import { useWebSocket } from '../lib/ws'
 
 interface Asset {
+  id?: string
   name: string
   status: string
   url?: string
@@ -51,8 +52,11 @@ export default function AssetGallery({ slug, onInsertAsset }: AssetGalleryProps)
   const [isDragOver, setIsDragOver] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [insertedIdx, setInsertedIdx] = useState<number | null>(null)
+  const [editingIdx, setEditingIdx] = useState<number | null>(null)
+  const [editValue, setEditValue] = useState('')
   const panelRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const renameInputRef = useRef<HTMLInputElement>(null)
   const dragDepthRef = useRef(0)
   const ws = useWebSocket()
 
@@ -67,6 +71,7 @@ export default function AssetGallery({ slug, onInsertAsset }: AssetGalleryProps)
           const parsed = JSON.parse(data)
           const raw = Array.isArray(parsed) ? parsed : (parsed.assets || [])
           const items = raw.map((a: any) => ({
+            id: a.id,
             name: a.name || a.originalName || a.file || a.id || a.description || 'Untitled',
             status: a.status || 'unknown',
             url: a.url,
@@ -104,6 +109,47 @@ export default function AssetGallery({ slug, onInsertAsset }: AssetGalleryProps)
       setUploading(false)
     }
   }, [slug])
+
+  const startEditing = useCallback((idx: number) => {
+    const asset = assets[idx]
+    if (!asset) return
+    const displayName = asset.originalName || asset.name
+    // Strip extension for easier editing
+    const dot = displayName.lastIndexOf('.')
+    setEditValue(dot > 0 ? displayName.slice(0, dot) : displayName)
+    setEditingIdx(idx)
+    // Focus the input after render
+    requestAnimationFrame(() => renameInputRef.current?.select())
+  }, [assets])
+
+  const commitRename = useCallback(async (idx: number) => {
+    const asset = assets[idx]
+    if (!asset?.id) {
+      setEditingIdx(null)
+      return
+    }
+
+    const trimmed = editValue.trim()
+    const currentName = asset.originalName || asset.name
+    const dot = currentName.lastIndexOf('.')
+    const ext = dot > 0 ? currentName.slice(dot) : ''
+    const newName = trimmed ? trimmed + ext : currentName
+
+    if (newName === currentName) {
+      setEditingIdx(null)
+      return
+    }
+
+    try {
+      setError(null)
+      await renameAsset(slug, asset.id, newName)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Rename failed'
+      setError(message)
+    } finally {
+      setEditingIdx(null)
+    }
+  }, [assets, editValue, slug])
 
   const handleFileInputChange = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || [])
@@ -250,9 +296,29 @@ export default function AssetGallery({ slug, onInsertAsset }: AssetGalleryProps)
                       alt={asset.originalName || asset.name}
                     />
                   ) : null}
-                  <div className="font-mono text-gray-300 truncate min-w-0">
-                    {asset.originalName || asset.name}
-                  </div>
+                  {editingIdx === idx ? (
+                    <input
+                      ref={renameInputRef}
+                      type="text"
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onBlur={() => void commitRename(idx)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); void commitRename(idx) }
+                        if (e.key === 'Escape') setEditingIdx(null)
+                      }}
+                      className="flex-1 min-w-0 bg-gray-800 border border-blue-500 rounded px-1.5 py-0.5 text-xs font-mono text-gray-200 outline-none"
+                    />
+                  ) : (
+                    <div
+                      className="font-mono text-gray-300 truncate min-w-0 cursor-pointer group/name flex items-center gap-1"
+                      onClick={() => startEditing(idx)}
+                      title="Click to rename"
+                    >
+                      <span className="truncate">{asset.originalName || asset.name}</span>
+                      <Pencil size={10} className="shrink-0 text-gray-500 opacity-0 group-hover/name:opacity-100 transition-opacity" />
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center justify-between mt-1">
                   <div className="text-gray-500 text-xs">{asset.status}</div>

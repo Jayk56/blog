@@ -42,6 +42,9 @@ POST_DIR="${AUDIO_NOTES_DIR}/${SLUG}"
 TRANSCRIPT_DIR="${OUTPUT_DIR}/${SLUG}"
 TRANSCRIPT_PATH="${TRANSCRIPT_DIR}/transcript.md"
 
+# Load metadata helper
+source "${REPO_ROOT}/pipeline/scripts/lib/metadata.sh"
+
 # Validate post exists
 if [[ ! -d "${POST_DIR}" ]]; then
     echo -e "${RED}Error: Post '${SLUG}' not found in ${AUDIO_NOTES_DIR}${NC}"
@@ -97,6 +100,11 @@ mkdir -p "$TRANSCRIPT_DIR"
 # Transcribe each new file
 NEW_TRANSCRIPT=""
 FILE_COUNT=0
+TRANSCRIBE_START=$(date +%s)
+NEW_AUDIO_DURATION=0
+NEW_AUDIO_SIZE=0
+NEW_WORD_COUNT=0
+NEW_FILE_METADATA="[]"
 
 for audio_file in "${NEW_FILES[@]}"; do
     FILE_COUNT=$((FILE_COUNT + 1))
@@ -131,6 +139,21 @@ for audio_file in "${NEW_FILES[@]}"; do
     # Save individual JSON (same as transcribe.sh)
     INDIVIDUAL_PATH="${TRANSCRIPT_DIR}/${FILENAME%.*}.json"
     echo "$RESPONSE" | jq '.' > "${INDIVIDUAL_PATH}" 2>/dev/null || true
+
+    # Extract metadata from response
+    AUDIO_DURATION=$(echo "$RESPONSE" | jq '[.words[-1].end // 0] | max')
+    AUDIO_SIZE=$(stat -f%z "$audio_file" 2>/dev/null || stat -c%s "$audio_file" 2>/dev/null || echo "0")
+    FILE_WORD_COUNT=$(echo "$TRANSCRIPT" | wc -w | tr -d ' ')
+
+    NEW_AUDIO_DURATION=$(echo "$NEW_AUDIO_DURATION + $AUDIO_DURATION" | bc)
+    NEW_AUDIO_SIZE=$((NEW_AUDIO_SIZE + AUDIO_SIZE))
+    NEW_WORD_COUNT=$((NEW_WORD_COUNT + FILE_WORD_COUNT))
+
+    NEW_FILE_METADATA=$(echo "$NEW_FILE_METADATA" | jq \
+        --arg name "$FILENAME" \
+        --argjson dur "$AUDIO_DURATION" \
+        --argjson size "$AUDIO_SIZE" \
+        '. + [{"name": $name, "duration_seconds": $dur, "size_bytes": $size}]')
 
     # Build the new section
     NEW_TRANSCRIPT+="## ${FILENAME}"$'\n'
@@ -171,5 +194,40 @@ ${NEW_TRANSCRIPT}
 EOF
     echo -e "${GREEN}✓ Created transcript with ${FILE_COUNT} file(s): ${TRANSCRIPT_PATH}${NC}"
 fi
+
+# Write metadata (incremental — merges with existing audio data)
+TRANSCRIBE_END=$(date +%s)
+TRANSCRIBE_DURATION=$((TRANSCRIBE_END - TRANSCRIBE_START))
+
+# Read existing totals and add new amounts
+EXISTING_META=$(metadata_read "$SLUG")
+PREV_DURATION=$(echo "$EXISTING_META" | jq '.audio.total_duration_seconds // 0')
+PREV_SIZE=$(echo "$EXISTING_META" | jq '.audio.total_size_bytes // 0')
+PREV_FILE_COUNT=$(echo "$EXISTING_META" | jq '.audio.file_count // 0')
+PREV_WORD_COUNT=$(echo "$EXISTING_META" | jq '.transcription.word_count // 0')
+
+UPDATED_DURATION=$(echo "$PREV_DURATION + $NEW_AUDIO_DURATION" | bc)
+UPDATED_SIZE=$((PREV_SIZE + NEW_AUDIO_SIZE))
+UPDATED_FILE_COUNT=$((PREV_FILE_COUNT + ${#NEW_FILES[@]}))
+UPDATED_WORD_COUNT=$((PREV_WORD_COUNT + NEW_WORD_COUNT))
+
+ESTIMATED_COST=$(echo "scale=4; $UPDATED_DURATION * 0.0001" | bc)
+
+metadata_merge "$SLUG" "$(jq -n \
+    --argjson file_count "$UPDATED_FILE_COUNT" \
+    --argjson total_dur "$UPDATED_DURATION" \
+    --argjson total_size "$UPDATED_SIZE" \
+    --argjson files "$NEW_FILE_METADATA" \
+    --arg completed "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    --argjson dur "$TRANSCRIBE_DURATION" \
+    --argjson words "$UPDATED_WORD_COUNT" \
+    --arg lang "eng" \
+    --argjson cost "$ESTIMATED_COST" \
+    '{
+        audio: { file_count: $file_count, total_duration_seconds: $total_dur, total_size_bytes: $total_size, files: $files },
+        transcription: { completed_at: $completed, duration_seconds: $dur, word_count: $words, language: $lang, estimated_cost_usd: $cost }
+    }')"
+
+echo -e "${GREEN}✓ Metadata updated${NC}"
 
 exit 0

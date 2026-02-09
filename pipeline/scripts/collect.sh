@@ -36,6 +36,11 @@ if [[ $# -lt 1 ]]; then
 fi
 
 SLUG="$1"
+
+# Load metadata helper
+source "${REPO_ROOT}/pipeline/scripts/lib/metadata.sh"
+COLLECT_START=$(date +%s)
+
 COLLECT_DIR="${OUTPUT_DIR}/collect/${SLUG}"
 ASSETS_DIR="${COLLECT_DIR}/assets"
 ASSETS_JSON="${COLLECT_DIR}/assets.json"
@@ -242,17 +247,33 @@ while IFS= read -r line; do
 
 done < <(grep '\[CODE:' "$SOURCE_MD" 2>/dev/null || true)
 
+# --- Preserve manually uploaded assets ---
+
+UPLOADED_ASSETS="[]"
+if [[ -f "$ASSETS_JSON" ]]; then
+    # Keep assets that were manually uploaded (have uploaded_at field)
+    UPLOADED_ASSETS=$(jq '[(.assets // [])[] | select(.uploaded_at)]' "$ASSETS_JSON" 2>/dev/null || echo "[]")
+    UPLOADED_COUNT=$(echo "$UPLOADED_ASSETS" | jq 'length')
+    if [[ "$UPLOADED_COUNT" -gt 0 ]]; then
+        echo -e "${BLUE}Preserving ${UPLOADED_COUNT} manually uploaded asset(s)${NC}"
+    fi
+fi
+
+# Merge: collected assets first, then uploaded assets
+MERGED_ASSETS=$(echo "$ASSETS_ARRAY" "$UPLOADED_ASSETS" | jq -s '.[0] + .[1]')
+
 # --- Generate assets.json manifest ---
 
 TOTAL_REQUESTED=$((SCREENSHOT_COUNT + EMBED_COUNT + CODE_COUNT))
-TOTAL_SUCCESSFUL=$(echo "$ASSETS_ARRAY" | jq 'length')
+TOTAL_COLLECTED=$(echo "$ASSETS_ARRAY" | jq 'length')
+TOTAL_SUCCESSFUL=$(echo "$MERGED_ASSETS" | jq 'length')
 
 jq -n \
     --arg slug "$SLUG" \
     --arg collected_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
     --argjson total_requested "$TOTAL_REQUESTED" \
     --argjson total_successful "$TOTAL_SUCCESSFUL" \
-    --argjson assets "$ASSETS_ARRAY" \
+    --argjson assets "$MERGED_ASSETS" \
     --argjson failures "$FAILURES_ARRAY" \
     '{
         slug: $slug,
@@ -264,9 +285,12 @@ jq -n \
     }' > "$ASSETS_JSON"
 
 echo
+UPLOADED_COUNT=$(echo "$UPLOADED_ASSETS" | jq 'length')
 echo -e "${GREEN}=== Collection Complete ===${NC}"
 echo "Requested: ${TOTAL_REQUESTED} assets (${SCREENSHOT_COUNT} screenshots, ${EMBED_COUNT} embeds, ${CODE_COUNT} code)"
-echo "Collected: ${TOTAL_SUCCESSFUL}"
+echo "Collected: ${TOTAL_COLLECTED}"
+echo "Uploaded:  ${UPLOADED_COUNT} (preserved)"
+echo "Total:     ${TOTAL_SUCCESSFUL}"
 echo "Failed:    $(echo "$FAILURES_ARRAY" | jq 'length')"
 echo
 echo "Manifest: ${ASSETS_JSON}"
@@ -278,6 +302,31 @@ if [[ "$FAILURE_COUNT" -gt 0 ]]; then
     echo -e "${YELLOW}Some assets need interactive collection via Cowork:${NC}"
     echo "$FAILURES_ARRAY" | jq -r '.[] | "  • \(.reason)"'
 fi
+
+# Write metadata
+COLLECT_END=$(date +%s)
+COLLECT_DURATION=$((COLLECT_END - COLLECT_START))
+TOTAL_ASSET_BYTES=$(echo "$ASSETS_ARRAY" | jq '[.[].size_bytes // 0] | add // 0')
+
+metadata_merge "$SLUG" "$(jq -n \
+    --arg started "$(date -u -r "$COLLECT_START" +'%Y-%m-%dT%H:%M:%SZ')" \
+    --arg completed "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    --argjson dur "$COLLECT_DURATION" \
+    --argjson requested "$TOTAL_REQUESTED" \
+    --argjson collected "$TOTAL_SUCCESSFUL" \
+    --argjson bytes "$TOTAL_ASSET_BYTES" \
+    '{
+        collect: {
+            started_at: $started,
+            completed_at: $completed,
+            duration_seconds: $dur,
+            assets_requested: $requested,
+            assets_collected: $collected,
+            total_asset_bytes: $bytes
+        }
+    }')"
+
+echo -e "${GREEN}✓ Metadata saved${NC}"
 
 echo
 echo "Next: make advance SLUG=${SLUG}"
