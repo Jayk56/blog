@@ -31,3 +31,12 @@ And so we were able to get the automated process of copy the voice memo from my 
 One thing I noticed when trying to draft the post is I was taking screenshots on my phone and screenshots on my computer, and I was not sure where to add them. So I had Cloud Code add a, the ability to drop the files or screenshots into the assets area of the draft, so that I could have a head start on collecting those, and I wouldn't lose them as I collected them with my thoughts.
 
 
+
+---
+
+# Follow-up recordings (added 2026-02-09 03:48:38 UTC)
+
+## New Recording 41.m4a
+This is me testing my voice memo for the CoWork blog automation. I updated the shortcut so that I can pick existing folders and also create new ones. So this is trying to put it in an existing folder.
+
+

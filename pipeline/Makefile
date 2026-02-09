@@ -1,4 +1,4 @@
-.PHONY: help new transcribe increment-transcribe preprocess update-preprocess draft review collect publish status advance editor all clean
+.PHONY: help new transcribe increment-transcribe preprocess update-preprocess draft review collect publish status report advance editor all clean
 
 # Get the directory where this Makefile is located
 MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
@@ -18,6 +18,7 @@ help:
 	@echo "  make transcribe SLUG=slug-name"
 	@echo "  make advance SLUG=slug-name"
 	@echo "  make status [SLUG=slug-name]"
+	@echo "  make report [SLUG=slug-name]                (metadata report)"
 	@echo "  make preprocess SLUG=slug-name"
 	@echo "  make increment-transcribe SLUG=slug-name  (transcribe new audio only)"
 	@echo "  make update-preprocess SLUG=slug-name     (update outline with new content)"
@@ -77,9 +78,8 @@ draft: check-slug advance
 	@echo "$(BLUE)Draft stage for $(SLUG)$(NC)"
 	@echo "Write the draft blog post based on processed content"
 
-review: check-slug advance
-	@echo "$(BLUE)Review stage for $(SLUG)$(NC)"
-	@echo "Review and edit the draft post"
+review: check-slug
+	@$(SCRIPTS_DIR)/review.sh "$(SLUG)"
 
 collect: check-slug
 	@$(SCRIPTS_DIR)/collect.sh "$(SLUG)"
@@ -93,6 +93,14 @@ status:
 		$(SCRIPTS_DIR)/status.sh; \
 	else \
 		$(SCRIPTS_DIR)/status.sh "$(SLUG)"; \
+	fi
+
+# Show metadata report
+report:
+	@if [ -z "$(SLUG)" ]; then \
+		$(SCRIPTS_DIR)/report.sh; \
+	else \
+		$(SCRIPTS_DIR)/report.sh "$(SLUG)"; \
 	fi
 
 # Launch the blog editor web app

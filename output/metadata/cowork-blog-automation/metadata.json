@@ -1,0 +1,208 @@
+{
+  "slug": "cowork-blog-automation",
+  "review": {
+    "started_at": "2026-02-09T02:57:20Z",
+    "completed_at": "2026-02-09T03:02:51Z",
+    "duration_seconds": 331,
+    "duration_api_ms": 360186,
+    "model": "claude-haiku-4-5-20251001",
+    "input_tokens": 4,
+    "output_tokens": 10776,
+    "cache_creation_tokens": 22517,
+    "cache_read_tokens": 88026,
+    "cost_usd": 0.5682209
+  },
+  "stage_transitions": [
+    {
+      "from": "draft",
+      "to": "review",
+      "at": "2026-02-08T22:00:36Z"
+    },
+    {
+      "from": "capture",
+      "to": "transcribe",
+      "at": "2026-02-06T20:39:00Z"
+    },
+    {
+      "from": "transcribe",
+      "to": "preprocess",
+      "at": "2026-02-06T20:44:00Z"
+    },
+    {
+      "from": "preprocess",
+      "to": "draft",
+      "at": "2026-02-07T00:01:30Z"
+    },
+    {
+      "from": "draft",
+      "to": "review",
+      "at": "2026-02-08T13:05:00Z"
+    },
+    {
+      "from": "review",
+      "to": "review",
+      "at": "2026-02-08T23:24:12Z"
+    },
+    {
+      "from": "review",
+      "to": "review",
+      "at": "2026-02-09T03:02:51Z"
+    },
+    {
+      "from": "review",
+      "to": "collect",
+      "at": "2026-02-09T04:32:42Z"
+    }
+  ],
+  "editing": {
+    "sessions": [
+      {
+        "started_at": "2026-02-08T22:58:20.878Z",
+        "last_save_at": "2026-02-08T23:05:38.622Z",
+        "save_count": 12,
+        "stage": "review",
+        "word_count_start": 2183,
+        "word_count_end": 2196
+      },
+      {
+        "started_at": "2026-02-08T23:05:38.576Z",
+        "last_save_at": "2026-02-09T02:52:14.685Z",
+        "save_count": 275,
+        "stage": "review",
+        "word_count_start": 2196,
+        "word_count_end": 2381
+      },
+      {
+        "started_at": "2026-02-08T23:05:38.798Z",
+        "last_save_at": "2026-02-09T04:12:43.320Z",
+        "save_count": 5,
+        "stage": "review",
+        "word_count_start": 2196,
+        "word_count_end": 2380
+      }
+    ]
+  },
+  "audio": {
+    "file_count": 5,
+    "total_duration_seconds": 1116.65,
+    "total_size_bytes": 18544796,
+    "files": [
+      {
+        "name": "New Recording 37.m4a",
+        "duration_seconds": 219.63,
+        "size_bytes": 3664445
+      },
+      {
+        "name": "New Recording 38.m4a",
+        "duration_seconds": 478.19,
+        "size_bytes": 7915018
+      },
+      {
+        "name": "New Recording 39.m4a",
+        "duration_seconds": 340.29,
+        "size_bytes": 5658127
+      },
+      {
+        "name": "New Recording 40.m4a",
+        "duration_seconds": 59.71,
+        "size_bytes": 994865
+      },
+      {
+        "name": "New Recording 41.m4a",
+        "duration_seconds": 18.84,
+        "size_bytes": 312341
+      }
+    ]
+  },
+  "transcription": {
+    "started_at": "2026-02-06T20:39:00Z",
+    "completed_at": "2026-02-09T03:48:38Z",
+    "duration_seconds": 1,
+    "word_count": 1886,
+    "language": "eng",
+    "estimated_cost_usd": 0.1116
+  },
+  "preprocess": {
+    "started_at": "2026-02-09T03:48:38Z",
+    "completed_at": "2026-02-09T03:48:53Z",
+    "duration_seconds": 15,
+    "duration_api_ms": 10887,
+    "model": "claude-opus-4-6",
+    "input_tokens": 2,
+    "output_tokens": 403,
+    "cache_creation_tokens": 14108,
+    "cache_read_tokens": 15451,
+    "cost_usd": 0.10598550000000001
+  },
+  "pipeline_jobs": [
+    {
+      "action": "review",
+      "job_id": "fa961c29-2906-4921-816b-00dd7cb2fa9f",
+      "started_at": "2026-02-08T23:19:58.337Z",
+      "completed_at": "2026-02-08T23:24:12.213Z",
+      "duration_seconds": 254,
+      "exit_code": 0
+    },
+    {
+      "action": "review",
+      "job_id": "25551c17-c1b5-42b1-a636-da61626d3a43",
+      "started_at": "2026-02-09T02:57:20.239Z",
+      "completed_at": "2026-02-09T03:02:51.270Z",
+      "duration_seconds": 331,
+      "exit_code": 0
+    },
+    {
+      "action": "collect",
+      "job_id": "bf3864a6-50b1-4be3-bea3-7bb3bfa5592a",
+      "started_at": "2026-02-09T03:18:52.844Z",
+      "completed_at": "2026-02-09T03:18:53.168Z",
+      "duration_seconds": 0,
+      "exit_code": 0
+    },
+    {
+      "action": "collect",
+      "job_id": "f7b444b8-b044-4c11-8e4c-a5e12a10bd7d",
+      "started_at": "2026-02-09T03:19:56.645Z",
+      "completed_at": "2026-02-09T03:20:19.277Z",
+      "duration_seconds": 23,
+      "exit_code": 0
+    },
+    {
+      "action": "collect",
+      "job_id": "331e6d4d-3f67-49e5-91de-c51085b1e666",
+      "started_at": "2026-02-09T04:32:21.441Z",
+      "completed_at": "2026-02-09T04:32:42.537Z",
+      "duration_seconds": 21,
+      "exit_code": 0
+    },
+    {
+      "action": "publish",
+      "job_id": "bf0dd978-6f63-4739-a159-a89ec16d20aa",
+      "started_at": "2026-02-09T04:33:05.440Z",
+      "completed_at": "2026-02-09T04:33:05.844Z",
+      "duration_seconds": 0,
+      "exit_code": 0
+    }
+  ],
+  "collect": {
+    "started_at": "2026-02-09T04:32:21Z",
+    "completed_at": "2026-02-09T04:32:42Z",
+    "duration_seconds": 21,
+    "assets_requested": 15,
+    "assets_collected": 9,
+    "total_asset_bytes": 516050
+  },
+  "publish": {
+    "published_at": "2026-02-09T04:33:05Z",
+    "bundle_size_bytes": 2147997,
+    "asset_count": 7
+  },
+  "summary": {
+    "total_automation_seconds": 368,
+    "total_estimated_editing_minutes": 541,
+    "total_estimated_cost_usd": 0.7858064,
+    "transcript_words": 1886,
+    "final_words": 2455,
+    "expansion_ratio": 1.3
+  }
+}

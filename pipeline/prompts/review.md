@@ -10,9 +10,11 @@ You will receive:
 - **outline**: The outline used to create the draft, for consistency checking
 
 ## Output
-Create `output/review/<slug>/review.md` with:
-1. The draft with inline HTML comments suggesting edits
-2. A callouts section at the top
+Output the review directly as markdown text (the calling script handles saving it). Do NOT attempt to write files, use tools, or ask for permissions — just produce the review content.
+
+Structure the review with:
+1. A callouts section at the top
+2. The draft with inline HTML comments suggesting edits
 3. A readiness score and rationale
 4. Suggested promotion text
 

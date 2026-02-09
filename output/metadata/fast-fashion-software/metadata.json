@@ -1,0 +1,35 @@
+{
+  "slug": "fast-fashion-software",
+  "audio": {
+    "file_count": 1,
+    "total_duration_seconds": 18.84,
+    "total_size_bytes": 312341,
+    "files": [
+      {
+        "name": "New Recording 41.m4a",
+        "duration_seconds": 18.84,
+        "size_bytes": 312341
+      }
+    ]
+  },
+  "transcription": {
+    "started_at": "2026-02-09T03:48:35Z",
+    "completed_at": "2026-02-09T03:48:37Z",
+    "duration_seconds": 2,
+    "word_count": 39,
+    "language": "eng",
+    "estimated_cost_usd": 0.0018
+  },
+  "preprocess": {
+    "started_at": "2026-02-09T03:48:53Z",
+    "completed_at": "2026-02-09T03:49:14Z",
+    "duration_seconds": 21,
+    "duration_api_ms": 17855,
+    "model": "claude-opus-4-6",
+    "input_tokens": 2,
+    "output_tokens": 660,
+    "cache_creation_tokens": 6563,
+    "cache_read_tokens": 15451,
+    "cost_usd": 0.06525425
+  }
+}
