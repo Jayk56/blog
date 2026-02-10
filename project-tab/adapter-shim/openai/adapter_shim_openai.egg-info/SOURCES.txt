@@ -1,0 +1,12 @@
+pyproject.toml
+adapter_shim/__init__.py
+adapter_shim/__main__.py
+adapter_shim/app.py
+adapter_shim/events.py
+adapter_shim/mock_runner.py
+adapter_shim/models.py
+adapter_shim_openai.egg-info/PKG-INFO
+adapter_shim_openai.egg-info/SOURCES.txt
+adapter_shim_openai.egg-info/dependency_links.txt
+adapter_shim_openai.egg-info/requires.txt
+adapter_shim_openai.egg-info/top_level.txt

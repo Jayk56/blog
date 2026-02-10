@@ -1,0 +1,28 @@
+{
+  "name": "@project-tab/claude-adapter-shim",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Claude Agent SDK adapter shim implementing the project-tab wire protocol",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "start:mock": "tsx src/index.ts --mock",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "ws": "^8.18.0",
+    "uuid": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/ws": "^8.5.0",
+    "@types/uuid": "^10.0.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
