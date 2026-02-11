@@ -67,6 +67,13 @@ export interface ApiRouteDeps {
   gateway: AgentGateway
   controlMode: ControlModeManager
   tokenService?: TokenService
+  contextInjection?: {
+    registerAgent(brief: import('../types').AgentBrief): void
+    removeAgent(id: string): void
+    updateAgentBrief(agentId: string, changes: Partial<import('../types').AgentBrief>): void
+    onBriefUpdated(agentId: string): Promise<boolean>
+  }
+  defaultPlugin?: string
 }
 
 /**

@@ -39,7 +39,7 @@ export function createAgentsRouter(deps: ApiRouteDeps): Router {
     }
 
     const brief = body.brief as unknown as AgentBrief
-    const pluginName = brief.modelPreference ?? 'openai'
+    const pluginName = brief.modelPreference ?? deps.defaultPlugin ?? 'openai'
 
     deps.gateway.spawn(brief, pluginName).then(async (handle) => {
       deps.registry.registerHandle(handle)
@@ -54,6 +54,8 @@ export function createAgentsRouter(deps: ApiRouteDeps): Router {
         trustScores: deps.trustEngine.getAllScores(),
         controlMode: deps.controlMode.getMode()
       })
+
+      deps.contextInjection?.registerAgent(brief)
 
       res.status(201).json({ agent: handle })
     }).catch((err: Error) => {
@@ -84,6 +86,7 @@ export function createAgentsRouter(deps: ApiRouteDeps): Router {
       const orphaned = deps.decisionQueue.handleAgentKilled(handle.id)
 
       deps.registry.removeHandle(handle.id)
+      deps.contextInjection?.removeAgent(handle.id)
 
       res.status(200).json({
         killed: true,
@@ -175,6 +178,11 @@ export function createAgentsRouter(deps: ApiRouteDeps): Router {
     }
 
     plugin.updateBrief(handle, body as unknown as Partial<AgentBrief>).then(() => {
+      const changes = body as unknown as Partial<AgentBrief>
+      deps.contextInjection?.updateAgentBrief(handle.id, changes)
+      deps.contextInjection?.onBriefUpdated(handle.id).catch(() => {
+        // Best effort — injection failure doesn't invalidate the brief update
+      })
       res.status(200).json({ updated: true, agentId: handle.id })
     }).catch((err: Error) => {
       res.status(500).json({ error: 'Brief update failed', message: err.message })
