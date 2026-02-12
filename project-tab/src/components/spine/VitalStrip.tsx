@@ -1,10 +1,11 @@
-import { Octagon, Play, ChevronRight, Pause } from 'lucide-react'
+import { Octagon, Play, ChevronRight, Pause, Wifi, WifiOff } from 'lucide-react'
 import { useProject } from '../../lib/context.js'
 import { scenarios } from '../../data/index.js'
 import { useEffect, useRef } from 'react'
 
 export default function VitalStrip() {
-  const { state, dispatch } = useProject()
+  const { state, dispatch, api, connected } = useProject()
+  const isLive = api !== null
   const autoRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const project = state.project
@@ -14,13 +15,21 @@ export default function VitalStrip() {
   useEffect(() => {
     if (state.autoSimulate && project && !project.emergencyBrakeEngaged) {
       autoRef.current = setInterval(() => {
-        dispatch({ type: 'advance-tick' })
+        if (api) {
+          // Live mode: only advance locally if the backend succeeds
+          api.advanceTick(1).then(() => {
+            dispatch({ type: 'advance-tick' })
+          }).catch(() => {})
+        } else {
+          // Mock mode: advance immediately
+          dispatch({ type: 'advance-tick' })
+        }
       }, 2000)
     }
     return () => {
       if (autoRef.current) clearInterval(autoRef.current)
     }
-  }, [state.autoSimulate, project?.emergencyBrakeEngaged, dispatch, project])
+  }, [state.autoSimulate, project?.emergencyBrakeEngaged, dispatch, project, api])
 
   const trendArrow = (trend: string) => {
     if (trend === 'improving') return '\u2191'
@@ -34,20 +43,32 @@ export default function VitalStrip() {
         <span className="font-semibold text-text-primary">Project Tab</span>
         <span className="text-text-muted">|</span>
 
-        {/* Scenario switcher */}
-        <select
-          aria-label="Select scenario"
-          className="bg-surface-2 border border-border rounded px-2 py-0.5 text-xs text-text-secondary appearance-none cursor-pointer pr-6"
-          style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237a7a8a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center' }}
-          value={state.activeScenarioId ?? ''}
-          onChange={(e) => dispatch({ type: 'load-scenario', scenarioId: e.target.value })}
-        >
-          {scenarios.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.label}
-            </option>
-          ))}
-        </select>
+        {/* Connection status (live mode) or Scenario switcher (mock mode) */}
+        {isLive ? (
+          <span
+            className={`flex items-center gap-1.5 text-xs ${
+              connected ? 'text-success' : 'text-warning'
+            }`}
+            title={connected ? 'Connected to backend' : 'Disconnected — reconnecting...'}
+          >
+            {connected ? <Wifi size={12} /> : <WifiOff size={12} />}
+            {connected ? 'Live' : 'Reconnecting'}
+          </span>
+        ) : (
+          <select
+            aria-label="Select scenario"
+            className="bg-surface-2 border border-border rounded px-2 py-0.5 text-xs text-text-secondary appearance-none cursor-pointer pr-6"
+            style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237a7a8a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center' }}
+            value={state.activeScenarioId ?? ''}
+            onChange={(e) => dispatch({ type: 'load-scenario', scenarioId: e.target.value })}
+          >
+            {scenarios.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        )}
 
         {project && (
           <>
@@ -89,7 +110,17 @@ export default function VitalStrip() {
               className="w-6 h-6 flex items-center justify-center rounded hover:bg-surface-2 text-text-muted hover:text-text-secondary transition-colors"
               title="Advance one tick"
               aria-label="Advance one tick"
-              onClick={() => dispatch({ type: 'advance-tick' })}
+              onClick={() => {
+                if (api) {
+                  // Live mode: only advance locally if the backend succeeds
+                  api.advanceTick(1).then(() => {
+                    dispatch({ type: 'advance-tick' })
+                  }).catch(() => {})
+                } else {
+                  // Mock mode: advance immediately
+                  dispatch({ type: 'advance-tick' })
+                }
+              }}
             >
               <ChevronRight size={14} />
             </button>
@@ -120,10 +151,25 @@ export default function VitalStrip() {
           aria-label={project?.emergencyBrakeEngaged ? 'Resume agents' : 'Emergency Brake — halt all agents'}
           onClick={() => {
             if (!project) return
-            dispatch({
-              type: 'emergency-brake',
-              engaged: !project.emergencyBrakeEngaged,
-            })
+            const newEngaged = !project.emergencyBrakeEngaged
+            dispatch({ type: 'emergency-brake', engaged: newEngaged })
+            if (api) {
+              if (newEngaged) {
+                api.engageBrake({
+                  scope: { type: 'all' },
+                  reason: 'Emergency brake engaged from UI',
+                  behavior: 'pause',
+                  initiatedBy: 'human',
+                }).catch(() => {
+                  // Rollback on failure
+                  dispatch({ type: 'emergency-brake', engaged: !newEngaged })
+                })
+              } else {
+                api.releaseBrake().catch(() => {
+                  dispatch({ type: 'emergency-brake', engaged: !newEngaged })
+                })
+              }
+            }
           }}
         >
           <Octagon size={12} />

@@ -19,6 +19,7 @@ import type { ControlMode } from './types/events'
 import type { AgentRegistry as IAgentRegistry, AgentGateway, KnowledgeStore, CheckpointStore, ControlModeManager } from './routes'
 import { AgentRegistry as AgentRegistryImpl } from './registry/agent-registry'
 import { WebSocketHub } from './ws-hub'
+import type { VolumeRecoveryService } from './gateway/volume-recovery'
 
 // ── Environment configuration ─────────────────────────────────────────────
 
@@ -154,13 +155,16 @@ async function bootstrap(): Promise<void> {
     shimArgs,
     backendUrl,
     generateToken,
+    onAgentCrash: (agentId) => {
+      registry.removeHandle(agentId)
+    },
   })
   plugins.set('openai', openaiPlugin)
   // eslint-disable-next-line no-console
   console.log(`[plugin] registered "openai" (local process: ${shimCommand} ${shimArgs.join(' ')})`)
 
   // Docker container plugin (conditional)
-  const dockerPlugins = await wireDockerPlugin(plugins, backendUrl, tokenService, eventBus)
+  const { volumeRecovery, docker: dockerClient } = await wireDockerPlugin(plugins, backendUrl, generateToken, eventBus, knowledgeStoreImpl)
 
   // ── Control mode ────────────────────────────────────────────────────
 
@@ -202,6 +206,12 @@ async function bootstrap(): Promise<void> {
     tokenService,
     contextInjection,
     defaultPlugin,
+    volumeRecovery: volumeRecovery ? {
+      async recover(agentId: string, knownArtifacts: import('./types/events').ArtifactEvent[]) {
+        return volumeRecovery.recover(agentId, knownArtifacts)
+      },
+    } : undefined,
+    knowledgeStoreImpl,
   })
 
   const server = createServer(app as any)
@@ -363,9 +373,25 @@ async function bootstrap(): Promise<void> {
     })
   })
 
+  // ── Startup volume recovery scan ──────────────────────────────────
+
+  if (volumeRecovery && dockerClient) {
+    // Run asynchronously — don't block server startup
+    runStartupVolumeRecovery(volumeRecovery, dockerClient, knowledgeStoreImpl, registry).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error('[volume-recovery] startup scan error:', err instanceof Error ? err.message : String(err))
+    })
+  }
+
   // ── Graceful shutdown ───────────────────────────────────────────────
 
   setupShutdown(server, tickService, contextInjection, openaiPlugin, knowledgeStoreImpl, registry, gateway)
+}
+
+/** Result from wireDockerPlugin — exposes volume recovery if Docker is available. */
+interface DockerWiringResult {
+  volumeRecovery: VolumeRecoveryService | null
+  docker: import('dockerode') | null
 }
 
 // ── Docker plugin wiring ──────────────────────────────────────────────────
@@ -373,13 +399,14 @@ async function bootstrap(): Promise<void> {
 async function wireDockerPlugin(
   plugins: Map<string, AgentPlugin>,
   backendUrl: string,
-  tokenService: TokenService,
+  generateToken: (agentId: string) => Promise<{ token: string; expiresAt: string }>,
   _eventBus: EventBus,
-): Promise<void> {
+  knowledgeStoreImpl: KnowledgeStoreImpl,
+): Promise<DockerWiringResult> {
   if (dockerEnabled === 'false') {
     // eslint-disable-next-line no-console
     console.log('[plugin] Docker disabled via DOCKER_ENABLED=false')
-    return
+    return { volumeRecovery: null, docker: null }
   }
 
   try {
@@ -392,6 +419,7 @@ async function wireDockerPlugin(
     const { ContainerOrchestrator } = await import('./gateway/container-orchestrator')
     const { ContainerPlugin } = await import('./gateway/container-plugin')
     const { createDefaultProvisioner } = await import('./gateway/mcp-provisioner')
+    const { VolumeRecoveryService } = await import('./gateway/volume-recovery')
 
     const orchestrator = new ContainerOrchestrator(docker)
     const mcpProvisioner = createDefaultProvisioner()
@@ -408,25 +436,25 @@ async function wireDockerPlugin(
       orchestrator,
       image: dockerImage,
       backendUrl,
-      generateToken: (agentId: string) => {
-        // ContainerPlugin expects sync generateToken. Token signing (HS256 via jose)
-        // resolves in a microtask, so the result object is populated before the next
-        // await in ContainerPlugin.spawn(). This is safe because createSandbox() is
-        // the first await after generateToken(), giving the microtask queue time to flush.
-        // TODO: Refactor ContainerPlugin to accept async generateToken.
-        const result = { token: '', expiresAt: '' }
-        tokenService.issueToken(agentId).then((issued) => {
-          result.token = issued.token
-          result.expiresAt = issued.expiresAt
-        })
-        return result
-      },
+      generateToken,
       mcpProvisioner,
     })
 
     plugins.set('claude', claudePlugin)
     // eslint-disable-next-line no-console
     console.log(`[plugin] registered "claude" (Docker container: ${dockerImage})`)
+
+    // Wire up volume recovery service for artifact recovery on unclean teardown
+    const volumeRecovery = new VolumeRecoveryService({
+      docker,
+      reupload: async (agentId, artifactId, _sourcePath, content) => {
+        knowledgeStoreImpl.storeArtifactContent(agentId, artifactId, content.toString('utf-8'))
+      },
+    })
+    // eslint-disable-next-line no-console
+    console.log('[plugin] VolumeRecoveryService wired for Docker volume recovery')
+
+    return { volumeRecovery, docker }
   } catch (err) {
     if (dockerEnabled === 'true') {
       throw new Error(`DOCKER_ENABLED=true but Docker is unavailable: ${err instanceof Error ? err.message : String(err)}`)
@@ -434,6 +462,81 @@ async function wireDockerPlugin(
     // auto mode: Docker not available, skip silently
     // eslint-disable-next-line no-console
     console.log(`[plugin] Docker not available, skipping container plugin (${err instanceof Error ? err.message : 'unknown error'})`)
+    return { volumeRecovery: null, docker: null }
+  }
+}
+
+/**
+ * Run startup volume recovery scan. Lists Docker volumes matching
+ * the `project-tab-workspace-*` naming convention and runs recovery
+ * for any that don't correspond to currently running agents.
+ */
+async function runStartupVolumeRecovery(
+  volumeRecovery: VolumeRecoveryService,
+  docker: import('dockerode'),
+  knowledgeStoreImpl: KnowledgeStoreImpl,
+  registry: IAgentRegistry,
+): Promise<void> {
+  try {
+    const volumes = await docker.listVolumes()
+    const orphanedVolumes = (volumes.Volumes ?? []).filter(
+      (v: { Name: string }) => v.Name.startsWith('project-tab-workspace-')
+    )
+
+    if (orphanedVolumes.length === 0) return
+
+    // eslint-disable-next-line no-console
+    console.log(`[volume-recovery] found ${orphanedVolumes.length} project-tab volume(s), scanning for orphans...`)
+
+    // List running Docker containers managed by project-tab to avoid
+    // treating still-running agent volumes as orphaned. The registry is
+    // empty on server restart, so we check Docker directly.
+    const runningAgentIds = new Set<string>()
+    try {
+      const containers = await docker.listContainers({
+        filters: { label: ['project-tab.managed=true'] },
+      })
+      for (const c of containers) {
+        const agentLabel = c.Labels?.['project-tab.agent-id']
+        if (agentLabel) {
+          runningAgentIds.add(agentLabel)
+        }
+      }
+      if (runningAgentIds.size > 0) {
+        // eslint-disable-next-line no-console
+        console.log(`[volume-recovery] ${runningAgentIds.size} container(s) still running, will skip their volumes`)
+      }
+    } catch (containerErr) {
+      // eslint-disable-next-line no-console
+      console.warn('[volume-recovery] failed to list running containers:', containerErr instanceof Error ? containerErr.message : String(containerErr))
+    }
+
+    for (const vol of orphanedVolumes) {
+      const agentId = vol.Name.replace('project-tab-workspace-', '')
+
+      // Skip volumes belonging to currently running agents (check both registry and Docker)
+      const handle = registry.getHandle(agentId)
+      if (handle && handle.status !== 'error') continue
+      if (runningAgentIds.has(agentId)) continue
+
+      const knownArtifacts = knowledgeStoreImpl.listArtifacts().filter(
+        (a) => a.agentId === agentId
+      )
+
+      try {
+        const result = await volumeRecovery.recover(agentId, knownArtifacts)
+        // eslint-disable-next-line no-console
+        console.log(
+          `[volume-recovery] agent ${agentId}: scanned=${result.filesScanned} skipped=${result.skipped.length} reuploaded=${result.reuploaded.length} orphans=${result.orphans.length} volumeDeleted=${result.volumeDeleted}`
+        )
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(`[volume-recovery] failed for agent ${agentId}:`, err instanceof Error ? err.message : String(err))
+      }
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[volume-recovery] startup scan failed:', err instanceof Error ? err.message : String(err))
   }
 }
 

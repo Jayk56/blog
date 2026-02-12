@@ -3,7 +3,8 @@ import { EventEmitter } from 'node:events'
 
 import { EventStreamClient, type WebSocketFactory } from '../../src/gateway/event-stream-client'
 import { EventBus } from '../../src/bus'
-import type { EventEnvelope } from '../../src/types'
+import type { EventEnvelope, ErrorEvent } from '../../src/types'
+import { clearQuarantine, getQuarantined } from '../../src/validation/quarantine'
 
 /** Minimal mock WebSocket that extends EventEmitter. */
 class MockWebSocket extends EventEmitter {
@@ -60,6 +61,7 @@ describe('EventStreamClient', () => {
   beforeEach(() => {
     MockWebSocket.instances = []
     eventBus = new EventBus()
+    clearQuarantine()
     vi.useFakeTimers()
   })
 
@@ -115,7 +117,7 @@ describe('EventStreamClient', () => {
     client.close()
   })
 
-  it('quarantines invalid events without publishing to bus', () => {
+  it('quarantines invalid events and emits warning ErrorEvent instead of original', () => {
     const client = makeClient()
     client.connect()
 
@@ -133,12 +135,19 @@ describe('EventStreamClient', () => {
       event: { type: 'status', message: 'no agentId' },
     }))
 
-    expect(seen).toHaveLength(0)
+    // Should NOT publish the original event, but SHOULD publish a warning ErrorEvent
+    expect(seen).toHaveLength(1)
+    expect(seen[0]!.event.type).toBe('error')
+    const errorEvt = seen[0]!.event as ErrorEvent
+    expect(errorEvt.severity).toBe('warning')
+    expect(errorEvt.recoverable).toBe(true)
+    expect(errorEvt.category).toBe('internal')
+    expect(errorEvt.message).toContain('Malformed adapter event quarantined')
 
     client.close()
   })
 
-  it('ignores non-JSON messages', () => {
+  it('emits warning ErrorEvent for non-JSON messages', () => {
     const client = makeClient()
     client.connect()
 
@@ -150,7 +159,14 @@ describe('EventStreamClient', () => {
 
     ws.simulateMessage('this is not json {{{')
 
-    expect(seen).toHaveLength(0)
+    // Should emit a warning ErrorEvent for the non-JSON message
+    expect(seen).toHaveLength(1)
+    expect(seen[0]!.event.type).toBe('error')
+    const errorEvt = seen[0]!.event as ErrorEvent
+    expect(errorEvt.severity).toBe('warning')
+    expect(errorEvt.recoverable).toBe(true)
+    expect(errorEvt.category).toBe('internal')
+    expect(errorEvt.message).toContain('non-JSON')
 
     client.close()
   })
@@ -329,5 +345,198 @@ describe('EventStreamClient', () => {
     expect(seen.map((e) => e.sourceEventId)).toEqual(['evt-1', 'evt-2', 'evt-3'])
 
     client.close()
+  })
+
+  describe('quarantine pipeline', () => {
+    it('stores malformed event in quarantine and emits warning', () => {
+      const client = makeClient()
+      client.connect()
+
+      const ws = MockWebSocket.instances[0]!
+      ws.simulateOpen()
+
+      const seen: EventEnvelope[] = []
+      eventBus.subscribe({}, (env) => seen.push(env))
+
+      ws.simulateMessage(JSON.stringify({
+        sourceEventId: 'evt-bad',
+        sourceSequence: 1,
+        sourceOccurredAt: '2026-02-10T00:00:00.000Z',
+        runId: 'run-1',
+        event: { type: 'status', message: 'missing agentId' },
+      }))
+
+      // Quarantine should have the malformed event
+      const quarantined = getQuarantined()
+      expect(quarantined).toHaveLength(1)
+      expect(quarantined[0]!.quarantinedAt).toBeTypeOf('string')
+      expect(quarantined[0]!.raw).toBeDefined()
+
+      // Warning should be emitted
+      expect(seen).toHaveLength(1)
+      expect(seen[0]!.event.type).toBe('error')
+
+      client.close()
+    })
+
+    it('warning event uses client agentId as the error agentId', () => {
+      const client = makeClient({ agentId: 'agent-xyz' })
+      client.connect()
+
+      const ws = MockWebSocket.instances[0]!
+      ws.simulateOpen()
+
+      const seen: EventEnvelope[] = []
+      eventBus.subscribe({}, (env) => seen.push(env))
+
+      ws.simulateMessage(JSON.stringify({
+        sourceEventId: 'evt-bad',
+        sourceSequence: 0,
+        sourceOccurredAt: 'invalid-date',
+        event: { type: 'unknown_type' },
+      }))
+
+      expect(seen).toHaveLength(1)
+      expect(seen[0]!.event.agentId).toBe('agent-xyz')
+
+      client.close()
+    })
+
+    it('warning event sourceEventId starts with quarantine- prefix', () => {
+      const client = makeClient()
+      client.connect()
+
+      const ws = MockWebSocket.instances[0]!
+      ws.simulateOpen()
+
+      const seen: EventEnvelope[] = []
+      eventBus.subscribe({}, (env) => seen.push(env))
+
+      ws.simulateMessage(JSON.stringify({ garbage: true }))
+
+      expect(seen).toHaveLength(1)
+      expect(seen[0]!.sourceEventId).toMatch(/^quarantine-/)
+
+      client.close()
+    })
+
+    it('warning event has ingestedAt and sourceOccurredAt timestamps', () => {
+      const client = makeClient()
+      client.connect()
+
+      const ws = MockWebSocket.instances[0]!
+      ws.simulateOpen()
+
+      const seen: EventEnvelope[] = []
+      eventBus.subscribe({}, (env) => seen.push(env))
+
+      ws.simulateMessage(JSON.stringify({ garbage: true }))
+
+      expect(seen).toHaveLength(1)
+      expect(seen[0]!.ingestedAt).toBeTypeOf('string')
+      expect(seen[0]!.sourceOccurredAt).toBeTypeOf('string')
+
+      client.close()
+    })
+
+    it('valid events pass through unchanged with EventEnvelope wrapping', () => {
+      const client = makeClient()
+      client.connect()
+
+      const ws = MockWebSocket.instances[0]!
+      ws.simulateOpen()
+
+      const seen: EventEnvelope[] = []
+      eventBus.subscribe({}, (env) => seen.push(env))
+
+      const validEvent = makeValidEvent()
+      ws.simulateMessage(JSON.stringify(validEvent))
+
+      expect(seen).toHaveLength(1)
+      expect(seen[0]!.sourceEventId).toBe(validEvent.sourceEventId)
+      expect(seen[0]!.sourceSequence).toBe(validEvent.sourceSequence)
+      expect(seen[0]!.sourceOccurredAt).toBe(validEvent.sourceOccurredAt)
+      expect(seen[0]!.runId).toBe(validEvent.runId)
+      expect(seen[0]!.event).toEqual(validEvent.event)
+      expect(seen[0]!.ingestedAt).toBeTypeOf('string')
+
+      client.close()
+    })
+
+    it('quarantine warning includes validation error details in message', () => {
+      const client = makeClient()
+      client.connect()
+
+      const ws = MockWebSocket.instances[0]!
+      ws.simulateOpen()
+
+      const seen: EventEnvelope[] = []
+      eventBus.subscribe({}, (env) => seen.push(env))
+
+      // Missing required fields: runId and agentId
+      ws.simulateMessage(JSON.stringify({
+        sourceEventId: 'evt-partial',
+        sourceSequence: 1,
+        sourceOccurredAt: 'not-a-datetime',
+        event: { type: 'status', message: 'no agent' },
+      }))
+
+      expect(seen).toHaveLength(1)
+      const errorEvt = seen[0]!.event as ErrorEvent
+      expect(errorEvt.message).toContain('Malformed adapter event quarantined')
+      // The message should contain the validation error text
+      expect(errorEvt.message.length).toBeGreaterThan(30)
+
+      client.close()
+    })
+
+    it('multiple quarantined events produce multiple warnings', () => {
+      const client = makeClient()
+      client.connect()
+
+      const ws = MockWebSocket.instances[0]!
+      ws.simulateOpen()
+
+      const seen: EventEnvelope[] = []
+      eventBus.subscribe({}, (env) => seen.push(env))
+
+      ws.simulateMessage(JSON.stringify({ bad: 1 }))
+      ws.simulateMessage(JSON.stringify({ bad: 2 }))
+      ws.simulateMessage('not json')
+
+      // 3 quarantine warnings (2 malformed JSON + 1 non-JSON)
+      const warnings = seen.filter((e) => e.event.type === 'error')
+      expect(warnings).toHaveLength(3)
+
+      // Quarantine store should have 2 entries (non-JSON doesn't go through quarantineEvent)
+      const quarantined = getQuarantined()
+      expect(quarantined).toHaveLength(2)
+
+      client.close()
+    })
+
+    it('mixed valid and invalid events are handled correctly', () => {
+      const client = makeClient()
+      client.connect()
+
+      const ws = MockWebSocket.instances[0]!
+      ws.simulateOpen()
+
+      const seen: EventEnvelope[] = []
+      eventBus.subscribe({}, (env) => seen.push(env))
+
+      // Send: valid, invalid, valid
+      ws.simulateMessage(JSON.stringify(makeValidEvent()))
+      ws.simulateMessage(JSON.stringify({ bad: true }))
+      ws.simulateMessage(JSON.stringify({ ...makeValidEvent(), sourceEventId: 'evt-2', sourceSequence: 2 }))
+
+      // Should see: valid event, quarantine warning, valid event
+      expect(seen).toHaveLength(3)
+      expect(seen[0]!.event.type).toBe('status')
+      expect(seen[1]!.event.type).toBe('error')
+      expect(seen[2]!.event.type).toBe('status')
+
+      client.close()
+    })
   })
 })

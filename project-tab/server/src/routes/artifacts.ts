@@ -18,6 +18,32 @@ export function createArtifactsRouter(deps: ApiRouteDeps): Router {
     }
   })
 
+  router.get('/artifacts/:id/content', (req, res) => {
+    if (!deps.knowledgeStoreImpl) {
+      res.status(501).json({ error: 'Content retrieval not supported' })
+      return
+    }
+
+    // First get the artifact to find its agent ID
+    const artifact = deps.knowledgeStoreImpl.getArtifact(req.params.id)
+    if (!artifact) {
+      res.status(404).json({ error: 'Artifact not found' })
+      return
+    }
+
+    // Then get the content using both agent ID and artifact ID
+    const result = deps.knowledgeStoreImpl.getArtifactContent(artifact.agentId, req.params.id)
+    if (!result) {
+      res.status(404).json({ error: 'Artifact content not found' })
+      return
+    }
+
+    if (result.mimeType) {
+      res.setHeader('Content-Type', result.mimeType)
+    }
+    res.status(200).send(result.content)
+  })
+
   router.get('/artifacts/:id', async (req, res) => {
     try {
       const snapshot = await deps.knowledgeStore.getSnapshot()
@@ -38,6 +64,8 @@ export function createArtifactsRouter(deps: ApiRouteDeps): Router {
     const body = req.body as Record<string, unknown>
     const agentId = body.agentId as string | undefined
     const artifactId = body.artifactId as string | undefined
+    const content = body.content as string | undefined
+    const mimeType = body.mimeType as string | undefined
 
     if (!agentId || !artifactId) {
       res.status(400).json({ error: 'Missing agentId or artifactId' })
@@ -46,6 +74,19 @@ export function createArtifactsRouter(deps: ApiRouteDeps): Router {
 
     // Generate a stable backend URI for the artifact
     const backendUri = `artifact://${agentId}/${artifactId}`
+
+    // Store content if the knowledge store supports it
+    if (deps.knowledgeStoreImpl && content !== undefined) {
+      try {
+        deps.knowledgeStoreImpl.storeArtifactContent(agentId, artifactId, content, mimeType)
+      } catch (err) {
+        res.status(500).json({
+          error: 'Failed to store artifact content',
+          message: (err as Error).message
+        })
+        return
+      }
+    }
 
     res.status(201).json({
       backendUri,

@@ -11,6 +11,7 @@
 import express, { type Request, type Response } from 'express'
 import { WebSocketServer, WebSocket } from 'ws'
 import type http from 'node:http'
+import { getArtifactUploadEndpoint, rewriteArtifactUri } from './artifact-upload.js'
 import { MockRunner } from './mock-runner.js'
 import type {
   AdapterEvent,
@@ -145,6 +146,17 @@ export function createApp(options: { mock?: boolean } = {}): express.Express {
     res.json({ status: 'resolved', decisionId: request.decisionId })
   })
 
+  // Only expose debug config endpoint in mock mode
+  if (state.mock) {
+    app.get('/debug/config', (_req: Request, res: Response) => {
+      if (state.runner === null) {
+        res.json({ providerConfig: null })
+        return
+      }
+      res.json({ providerConfig: state.runner.brief.providerConfig ?? null })
+    })
+  }
+
   // POST /inject-context
   app.post('/inject-context', (_req: Request, res: Response) => {
     // Plumbing only in Phase 1 -- accept but don't act
@@ -172,34 +184,51 @@ export function createApp(options: { mock?: boolean } = {}): express.Express {
 export function setupWebSocket(server: http.Server, app: express.Express): WebSocketServer {
   const state: AppState = (app as any).__state
   const wss = new WebSocketServer({ server, path: '/events' })
+  const uploadEndpoint = getArtifactUploadEndpoint()
 
   wss.on('connection', (ws: WebSocket) => {
     state.wsConnected = true
 
-    const interval = setInterval(() => {
+    const sendEvent = async (event: AdapterEvent) => {
+      if (uploadEndpoint) {
+        event = await rewriteArtifactUri(event, uploadEndpoint)
+      }
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(event))
+      }
+    }
+
+    let draining = false
+    const interval = setInterval(async () => {
       if (ws.readyState !== WebSocket.OPEN) {
         clearInterval(interval)
         return
       }
 
-      drainToBuffer(state)
+      // Prevent re-entry when artifact upload latency exceeds 50ms
+      if (draining) return
+      draining = true
 
-      while (state.eventBuffer.length > 0) {
-        const event = state.eventBuffer.shift()!
-        ws.send(JSON.stringify(event))
-      }
+      try {
+        drainToBuffer(state)
 
-      // If runner is done and no more events, do a final drain
-      if (state.runner && !state.runner.isRunning && state.eventBuffer.length === 0) {
-        setTimeout(() => {
-          drainToBuffer(state)
-          while (state.eventBuffer.length > 0) {
-            const event = state.eventBuffer.shift()!
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify(event))
+        while (state.eventBuffer.length > 0) {
+          const event = state.eventBuffer.shift()!
+          await sendEvent(event)
+        }
+
+        // If runner is done and no more events, do a final drain
+        if (state.runner && !state.runner.isRunning && state.eventBuffer.length === 0) {
+          setTimeout(async () => {
+            drainToBuffer(state)
+            while (state.eventBuffer.length > 0) {
+              const event = state.eventBuffer.shift()!
+              await sendEvent(event)
             }
-          }
-        }, 50)
+          }, 50)
+        }
+      } finally {
+        draining = false
       }
     }, 50)
 

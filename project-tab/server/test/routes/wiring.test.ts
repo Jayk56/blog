@@ -483,10 +483,12 @@ describe('Route wiring: POST /api/agents/:id/kill', () => {
       // Agent should be removed from registry
       expect(registry.getHandle('agent-kill-1')).toBeNull()
 
-      // Decision should be in triage
+      // Decision should be in grace period (pending with grace badge)
+      // It will move to triage after the grace period expires via tick service
       const decision = deps.decisionQueue.get('decision-1')
-      expect(decision?.status).toBe('triage')
-      expect(decision?.badge).toBe('agent killed')
+      expect(decision?.status).toBe('pending')
+      expect(decision?.badge).toBe('grace period')
+      expect(decision?.graceDeadlineTick).toBeDefined()
     } finally {
       await app.close()
     }

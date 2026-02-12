@@ -6,12 +6,15 @@ import type { TickService } from '../tick'
 export interface DecisionTimeoutPolicy {
   timeoutTicks: number | null
   onTimeout: 'auto_recommend'
+  /** Grace period (in ticks) before orphaned decisions enter triage after agent kill. Default: 30. */
+  orphanGracePeriodTicks: number
 }
 
 /** Default timeout policy: 300 ticks, auto_recommend on expiry. */
 const DEFAULT_TIMEOUT_POLICY: DecisionTimeoutPolicy = {
   timeoutTicks: 300,
-  onTimeout: 'auto_recommend'
+  onTimeout: 'auto_recommend',
+  orphanGracePeriodTicks: 30,
 }
 
 /** Status of a queued decision. */
@@ -26,6 +29,8 @@ export interface QueuedDecision {
   resolution?: Resolution
   badge?: string
   priority: number
+  /** Tick at which a grace-period orphan should move to triage. */
+  graceDeadlineTick?: number
 }
 
 /** Resolution callback for awaiting callers. */
@@ -160,6 +165,26 @@ export class DecisionQueue {
   }
 
   /**
+   * Schedule orphan triage for an agent's pending decisions after a grace period.
+   * Decisions remain pending (resolvable by the human) during the grace window.
+   * After graceDeadlineTick passes, onTick() moves them to 'triage'.
+   */
+  scheduleOrphanTriage(agentId: string, currentTick: number): QueuedDecision[] {
+    const scheduled: QueuedDecision[] = []
+    const deadline = currentTick + this.timeoutPolicy.orphanGracePeriodTicks
+
+    for (const entry of this.decisions.values()) {
+      if (entry.event.agentId === agentId && entry.status === 'pending') {
+        entry.badge = 'grace period'
+        entry.graceDeadlineTick = deadline
+        scheduled.push(entry)
+      }
+    }
+
+    return scheduled
+  }
+
+  /**
    * Suspend all pending decisions from an agent (used by brake-initiated kill).
    */
   suspendAgentDecisions(agentId: string): QueuedDecision[] {
@@ -216,12 +241,22 @@ export class DecisionQueue {
     return priority
   }
 
-  /** Tick handler for timeout processing. */
+  /** Tick handler for timeout and grace period processing. */
   private onTick(currentTick: number): void {
-    if (this.timeoutPolicy.timeoutTicks === null) return
-
     for (const entry of this.decisions.values()) {
       if (entry.status !== 'pending') continue
+
+      // Check grace period expiry first (orphaned decisions awaiting triage)
+      if (entry.graceDeadlineTick != null && currentTick >= entry.graceDeadlineTick) {
+        entry.status = 'triage'
+        entry.badge = 'agent killed'
+        entry.priority += 100
+        entry.graceDeadlineTick = undefined
+        continue
+      }
+
+      // Skip timeout processing if timeoutTicks is null
+      if (this.timeoutPolicy.timeoutTicks === null) continue
 
       // Check explicit dueByTick first
       const dueByTick = entry.event.dueByTick

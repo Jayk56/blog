@@ -7,7 +7,7 @@ import { scenarios } from '../data/index.js'
 // ── Helpers ──────────────────────────────────────────────────────
 
 function renderShell(route = '/', state = scenarios[0].state) {
-  const value: ProjectContextValue = { state, dispatch: vi.fn() }
+  const value: ProjectContextValue = { state, dispatch: vi.fn(), api: null, connected: false }
   return render(
     <MemoryRouter initialEntries={[route]}>
       <ProjectContext value={value}>

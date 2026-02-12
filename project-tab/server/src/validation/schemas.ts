@@ -265,7 +265,16 @@ export const knowledgeSnapshotSchema = z.object({
       title: z.string(),
       severity: severitySchema,
       agentId: z.string(),
-      subtype: z.enum(['option', 'tool_approval'])
+      subtype: z.enum(['option', 'tool_approval']),
+      options: z.array(decisionOptionSchema).optional(),
+      recommendedOptionId: z.string().optional(),
+      confidence: z.number().optional(),
+      blastRadius: blastRadiusSchema.optional(),
+      affectedArtifactIds: z.array(z.string()).optional(),
+      requiresRationale: z.boolean().optional(),
+      summary: z.string().optional(),
+      dueByTick: z.number().nullable().optional(),
+      toolName: z.string().optional(),
     })
   ),
   recentCoherenceIssues: z.array(
@@ -414,7 +423,7 @@ export const brakeActionSchema = z.object({
 export const optionResolutionSchema = z.object({
   type: z.literal('option'),
   chosenOptionId: z.string().min(1),
-  rationale: z.string().min(1),
+  rationale: z.string(),
   actionKind: actionKindSchema
 })
 

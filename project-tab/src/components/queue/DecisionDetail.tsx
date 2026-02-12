@@ -6,7 +6,8 @@
 import { useState, useEffect } from 'react'
 import { AlertTriangle, FileText, Target, Check, X } from 'lucide-react'
 import type { DecisionItem, Severity } from '../../types/index.js'
-import { useProjectDispatch, useProjectState } from '../../lib/context.js'
+import { useProjectDispatch, useProjectState, useApi } from '../../lib/context.js'
+import { adaptFrontendResolution } from '../../services/state-adapter.js'
 
 interface Props {
   decision: DecisionItem
@@ -24,6 +25,7 @@ const severityLabel: Record<Severity, string> = {
 export default function DecisionDetail({ decision, onOpenProvenance }: Props) {
   const dispatch = useProjectDispatch()
   const state = useProjectState()
+  const api = useApi()
   const [rationale, setRationale] = useState('')
 
   // Reset rationale when switching between decisions
@@ -45,14 +47,43 @@ export default function DecisionDetail({ decision, onOpenProvenance }: Props) {
     const option = decision.options.find((o) => o.id === optionId)
     if (!option) return
 
-    dispatch({
-      type: 'resolve-decision',
-      decisionId: decision.id,
-      chosenOptionId: optionId,
-      actionKind: option.actionKind,
-      rationale: rationale.trim(),
-    })
-    setRationale('')
+    const trimmedRationale = rationale.trim()
+
+    // Call API first if in live mode
+    if (api) {
+      const resolution = adaptFrontendResolution(
+        optionId,
+        option.actionKind,
+        trimmedRationale,
+        decision.subtype,
+      )
+
+      api.resolveDecision(decision.id, resolution).then(() => {
+        // Server will broadcast the resolution to all clients
+        // Local dispatch only in mock mode or if API succeeds
+        dispatch({
+          type: 'resolve-decision',
+          decisionId: decision.id,
+          chosenOptionId: optionId,
+          actionKind: option.actionKind,
+          rationale: trimmedRationale,
+        })
+        setRationale('')
+      }).catch((err) => {
+        console.error('Failed to resolve decision:', err)
+        // Don't update local state on failure
+      })
+    } else {
+      // Mock mode - update immediately
+      dispatch({
+        type: 'resolve-decision',
+        decisionId: decision.id,
+        chosenOptionId: optionId,
+        actionKind: option.actionKind,
+        rationale: trimmedRationale,
+      })
+      setRationale('')
+    }
   }
 
   return (

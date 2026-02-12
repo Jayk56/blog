@@ -176,6 +176,49 @@ export interface ToggleAutoSimulateAction {
   type: 'toggle-auto-simulate';
 }
 
+// ── Server-pushed actions ─────────────────────────────────────────
+
+/** Full state sync from backend on connect/reconnect. */
+export interface ServerStateSyncAction {
+  type: 'server-state-sync';
+  /** Partial state produced by the state adapter from the backend snapshot. */
+  serverState: Partial<ProjectState>;
+}
+
+/** A workspace-scoped event from the backend. */
+export interface ServerEventAction {
+  type: 'server-event';
+  event: import('./timeline.js').TimelineEvent;
+  /** Raw server event envelope, used to populate decisions/artifacts/coherence from event data. */
+  envelope?: import('./server.js').ServerEventEnvelope;
+}
+
+/** Trust score delta from backend. */
+export interface ServerTrustUpdateAction {
+  type: 'server-trust-update';
+  agentId: string;
+  previousScore: number;
+  newScore: number;
+  delta: number;
+  reason: string;
+}
+
+/** A decision was resolved (possibly by another client). */
+export interface ServerDecisionResolvedAction {
+  type: 'server-decision-resolved';
+  decisionId: string;
+  agentId: string;
+  /** Resolution payload from the server (chosenOptionId, rationale, etc.). */
+  resolution?: import('./server.js').ServerResolution;
+}
+
+/** Emergency brake was applied from backend. */
+export interface ServerBrakeAction {
+  type: 'server-brake';
+  engaged: boolean;
+  affectedAgentIds: string[];
+}
+
 /**
  * Union of all possible reducer actions.
  * The reducer in lib/reducer.ts will handle each of these.
@@ -194,4 +237,9 @@ export type ProjectAction =
   | ToggleCheckpointAction
   | AcceptRecommendationAction
   | RejectRecommendationAction
-  | ToggleAutoSimulateAction;
+  | ToggleAutoSimulateAction
+  | ServerStateSyncAction
+  | ServerEventAction
+  | ServerTrustUpdateAction
+  | ServerDecisionResolvedAction
+  | ServerBrakeAction;

@@ -3,6 +3,7 @@ import type {
   AgentHandle,
   AgentPlugin,
   ContextInjection,
+  EventEnvelope,
   KillRequest,
   KillResponse,
   LocalHttpTransport,
@@ -21,6 +22,8 @@ interface AgentRecord {
   plugin: LocalHttpPlugin
   eventStream: EventStreamClient
   port: number
+  /** Set to true once crash handling has fired (dedup between process exit + WS drop). */
+  crashHandled: boolean
 }
 
 /** Options for creating a LocalProcessPlugin. */
@@ -38,6 +41,8 @@ export interface LocalProcessPluginOptions {
   backendUrl: string
   /** Function to generate a backend token for a new agent sandbox. */
   generateToken: (agentId: string) => Promise<{ token: string; expiresAt: string }>
+  /** Optional callback invoked when an agent crashes, to clean up external state (e.g. registry). */
+  onAgentCrash?: (agentId: string) => void
 }
 
 /**
@@ -60,6 +65,7 @@ export class LocalProcessPlugin implements AgentPlugin {
   private readonly shimArgs: string[]
   private readonly backendUrl: string
   private readonly generateToken: LocalProcessPluginOptions['generateToken']
+  private readonly onAgentCrash: ((agentId: string) => void) | null
   private readonly agents = new Map<string, AgentRecord>()
 
   constructor(options: LocalProcessPluginOptions) {
@@ -77,6 +83,7 @@ export class LocalProcessPlugin implements AgentPlugin {
     this.shimArgs = options.shimArgs
     this.backendUrl = options.backendUrl
     this.generateToken = options.generateToken
+    this.onAgentCrash = options.onAgentCrash ?? null
   }
 
   async spawn(brief: AgentBrief): Promise<AgentHandle> {
@@ -110,14 +117,42 @@ export class LocalProcessPlugin implements AgentPlugin {
       url: result.transport.eventStreamEndpoint,
       agentId,
       eventBus: this.eventBus,
+      onDisconnect: () => {
+        // Only trigger crash cleanup if the process has already exited.
+        // Transient WS disconnects should be handled by EventStreamClient's reconnection logic.
+        const record = this.agents.get(agentId)
+        if (!record || record.crashHandled) {
+          // Crash already handled by process exit
+          return
+        }
+
+        // Check if the process is still alive
+        const proc = this.processManager.getProcess(agentId)
+        if (proc && proc.exitCode === null) {
+          // Process is still running — let reconnection logic handle it
+          return
+        }
+
+        // Process is confirmed dead — trigger crash cleanup using its actual exit code
+        this.handleCrash(agentId, proc?.exitCode ?? null, proc?.signalCode ?? null)
+      },
     })
     eventStream.connect()
 
-    this.agents.set(agentId, { plugin, eventStream, port: result.port })
+    this.agents.set(agentId, { plugin, eventStream, port: result.port, crashHandled: false })
+
+    // Register process exit listener for crash detection
+    this.processManager.onExit(agentId, (code, signal) => {
+      this.handleCrash(agentId, code, signal)
+    })
 
     // Delegate the spawn RPC call to the per-agent plugin
     try {
-      return await plugin.spawn(brief)
+      const handle = await plugin.spawn(brief)
+      // Override pluginName to match this plugin's registered name
+      // (the shim may report its own name, e.g. "openai-mock")
+      handle.pluginName = this.name
+      return handle
     } catch (err) {
       // Clean up the spawned process if the RPC spawn call fails
       eventStream.close()
@@ -138,6 +173,9 @@ export class LocalProcessPlugin implements AgentPlugin {
 
   async kill(handle: AgentHandle, options?: KillRequest): Promise<KillResponse> {
     const record = this.getRecord(handle.id)
+
+    // Mark as intentional kill so crash handler doesn't fire
+    record.crashHandled = true
 
     let response: KillResponse
     try {
@@ -188,12 +226,75 @@ export class LocalProcessPlugin implements AgentPlugin {
     for (const id of ids) {
       const record = this.agents.get(id)
       if (record) {
+        record.crashHandled = true
         record.eventStream.close()
         this.processManager.killProcess(id)
         this.processManager.cleanup(id, record.port)
         this.agents.delete(id)
       }
     }
+  }
+
+  /**
+   * Handle an unexpected agent crash detected via process exit or WS disconnect.
+   * Emits synthetic ErrorEvent + LifecycleEvent to the EventBus.
+   * Uses crashHandled flag to deduplicate (both process exit and WS drop may fire).
+   */
+  private handleCrash(agentId: string, code: number | null, signal: string | null): void {
+    const record = this.agents.get(agentId)
+    if (!record || record.crashHandled) return
+
+    record.crashHandled = true
+
+    // Clean up the agent record (always release resources, even on clean exit)
+    record.eventStream.close()
+    this.processManager.cleanup(agentId, record.port)
+    this.agents.delete(agentId)
+
+    // Notify external state (e.g. registry) so the agent handle is removed
+    if (this.onAgentCrash) {
+      this.onAgentCrash(agentId)
+    }
+
+    // Clean exit (code 0) from an intentional kill — not a crash, skip event emission
+    if (code === 0) return
+
+    const runId = `crash-${agentId}-${Date.now()}`
+    const now = new Date().toISOString()
+
+    // Emit synthetic ErrorEvent
+    const errorEnvelope: EventEnvelope = {
+      sourceEventId: `crash-error-${agentId}-${Date.now()}`,
+      sourceSequence: -1,
+      sourceOccurredAt: now,
+      runId,
+      ingestedAt: now,
+      event: {
+        type: 'error',
+        agentId,
+        severity: 'critical',
+        message: `Agent process exited unexpectedly (code=${code}, signal=${signal})`,
+        recoverable: false,
+        category: 'internal',
+      },
+    }
+    this.eventBus.publish(errorEnvelope)
+
+    // Emit synthetic LifecycleEvent
+    const lifecycleEnvelope: EventEnvelope = {
+      sourceEventId: `crash-lifecycle-${agentId}-${Date.now()}`,
+      sourceSequence: -1,
+      sourceOccurredAt: now,
+      runId,
+      ingestedAt: now,
+      event: {
+        type: 'lifecycle',
+        agentId,
+        action: 'crashed',
+        reason: `Process exit code=${code} signal=${signal}`,
+      },
+    }
+    this.eventBus.publish(lifecycleEnvelope)
   }
 
   private getRecord(agentId: string): AgentRecord {

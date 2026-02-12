@@ -35,7 +35,7 @@ export interface ContainerPluginOptions {
   /** Base URL of this backend (injected into sandbox bootstrap). */
   backendUrl: string
   /** Function to generate a backend token for a new agent sandbox. */
-  generateToken: (agentId: string) => { token: string; expiresAt: string }
+  generateToken: (agentId: string) => Promise<{ token: string; expiresAt: string }>
   /** Fetch function -- injectable for testing. */
   fetchFn?: typeof globalThis.fetch
   /** Optional MCP server provisioner for configuring sandbox-local MCP servers. */
@@ -77,7 +77,7 @@ export class ContainerPlugin implements AgentPlugin {
   /** Provision a container, then POST /spawn with the brief. */
   async spawn(brief: AgentBrief): Promise<AgentHandle> {
     const agentId = brief.agentId
-    const { token, expiresAt } = this.generateToken(agentId)
+    const { token, expiresAt } = await this.generateToken(agentId)
 
     const bootstrap: SandboxBootstrap = {
       backendUrl: this.backendUrl,

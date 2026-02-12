@@ -11,7 +11,7 @@ function renderMap(state: ProjectState = scenarios[0].state) {
   const dispatch = vi.fn()
   const result = render(
     <MemoryRouter>
-      <ProjectContext value={{ state, dispatch }}>
+      <ProjectContext value={{ state, dispatch, api: null, connected: false }}>
         <MapWorkspace />
       </ProjectContext>
     </MemoryRouter>,

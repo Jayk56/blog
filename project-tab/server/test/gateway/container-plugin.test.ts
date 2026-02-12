@@ -123,7 +123,7 @@ function makeMockOrchestrator(): ContainerOrchestrator {
 }
 
 function makeTokenGenerator() {
-  return vi.fn((_agentId: string) => ({
+  return vi.fn(async (_agentId: string) => ({
     token: 'generated-token',
     expiresAt: '2026-02-12T00:00:00.000Z',
   }))

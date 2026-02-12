@@ -38,5 +38,7 @@ export {
   useProject,
   useProjectState,
   useProjectDispatch,
+  useApi,
+  useConnected,
 } from './context.js';
 export type { ProjectContextValue } from './context.js';

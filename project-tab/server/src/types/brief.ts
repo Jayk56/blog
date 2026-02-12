@@ -159,6 +159,24 @@ export interface DecisionSummary {
   severity: Severity
   agentId: string
   subtype: 'option' | 'tool_approval'
+  /** Option data for option decisions (so reconnecting clients can hydrate the queue). */
+  options?: Array<{ id: string; label: string; description: string; tradeoffs?: string }>
+  /** Recommended option ID for option decisions. */
+  recommendedOptionId?: string
+  /** Confidence score for this decision. */
+  confidence?: number
+  /** Blast radius for this decision. */
+  blastRadius?: BlastRadius
+  /** Affected artifact IDs. */
+  affectedArtifactIds?: string[]
+  /** Whether rationale is required. */
+  requiresRationale?: boolean
+  /** Summary text for option decisions. */
+  summary?: string
+  /** Due-by tick for this decision. */
+  dueByTick?: number | null
+  /** Tool name for tool_approval decisions. */
+  toolName?: string
 }
 
 /** Compact coherence summary in snapshots. */

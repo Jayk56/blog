@@ -87,6 +87,12 @@ export interface DecisionItem {
   summary: string;
   /** What type of decision this is. */
   type: DecisionType;
+  /**
+   * Backend decision subtype: 'option' for multi-option decisions,
+   * 'tool_approval' for tool call approval requests.
+   * Defaults to 'option' for mock/legacy data.
+   */
+  subtype?: 'option' | 'tool_approval';
   /** How severe/important this decision is. */
   severity: Severity;
   /**

@@ -153,6 +153,16 @@ export class KnowledgeStore {
       CREATE INDEX IF NOT EXISTS idx_checkpoints_agent ON checkpoints(agent_id);
       CREATE INDEX IF NOT EXISTS idx_checkpoints_agent_created ON checkpoints(agent_id, created_at);
 
+      CREATE TABLE IF NOT EXISTS artifact_content (
+        agent_id TEXT NOT NULL,
+        artifact_id TEXT NOT NULL,
+        content TEXT NOT NULL,
+        mime_type TEXT,
+        backend_uri TEXT NOT NULL,
+        uploaded_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (agent_id, artifact_id)
+      );
+
       CREATE TABLE IF NOT EXISTS audit_log (
         rowid INTEGER PRIMARY KEY AUTOINCREMENT,
         entity_type TEXT NOT NULL,
@@ -269,6 +279,34 @@ export class KnowledgeStore {
   getArtifactVersion(artifactId: string): number {
     const row = this.db.prepare('SELECT version FROM artifacts WHERE artifact_id = ?').get(artifactId) as { version: number } | undefined
     return row?.version ?? 0
+  }
+
+  /**
+   * Store artifact content uploaded from an adapter shim.
+   * Returns a stable backend URI (artifact://agentId/artifactId).
+   */
+  storeArtifactContent(agentId: string, artifactId: string, content: string, mimeType?: string): { backendUri: string; artifactId: string; stored: boolean } {
+    const backendUri = `artifact://${agentId}/${artifactId}`
+
+    this.db.prepare(`
+      INSERT INTO artifact_content (agent_id, artifact_id, content, mime_type, backend_uri, uploaded_at)
+      VALUES (?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(agent_id, artifact_id) DO UPDATE SET
+        content = excluded.content,
+        mime_type = excluded.mime_type,
+        backend_uri = excluded.backend_uri,
+        uploaded_at = datetime('now')
+    `).run(agentId, artifactId, content, mimeType ?? null, backendUri)
+
+    this.recordAudit('artifact_content', artifactId, 'upload', agentId)
+    return { backendUri, artifactId, stored: true }
+  }
+
+  /** Retrieve stored artifact content by agent ID and artifact ID. */
+  getArtifactContent(agentId: string, artifactId: string): { content: string; mimeType: string | null; backendUri: string } | undefined {
+    const row = this.db.prepare('SELECT content, mime_type, backend_uri FROM artifact_content WHERE agent_id = ? AND artifact_id = ?').get(agentId, artifactId) as
+      { content: string; mime_type: string | null; backend_uri: string } | undefined
+    return row ? { content: row.content, mimeType: row.mime_type, backendUri: row.backend_uri } : undefined
   }
 
   /** List all stored artifacts, optionally filtered by workstream. */
@@ -668,13 +706,36 @@ export class KnowledgeStore {
   private buildDecisionSummaries(pendingDecisions?: QueuedDecision[]): DecisionSummary[] {
     if (!pendingDecisions) return []
 
-    return pendingDecisions.map((d) => ({
-      id: d.event.decisionId,
-      title: d.event.subtype === 'option' ? (d.event as any).title : `Tool: ${(d.event as any).toolName}`,
-      severity: d.event.subtype === 'option' ? (d.event as any).severity : ((d.event as any).severity ?? 'medium'),
-      agentId: d.event.agentId,
-      subtype: d.event.subtype
-    }))
+    return pendingDecisions.map((d) => {
+      const base: DecisionSummary = {
+        id: d.event.decisionId,
+        title: d.event.subtype === 'option' ? (d.event as any).title : `Tool: ${(d.event as any).toolName}`,
+        severity: d.event.subtype === 'option' ? (d.event as any).severity : ((d.event as any).severity ?? 'medium'),
+        agentId: d.event.agentId,
+        subtype: d.event.subtype,
+      }
+
+      if (d.event.subtype === 'option') {
+        const optEvent = d.event as import('../types/events').OptionDecisionEvent
+        base.options = optEvent.options
+        base.recommendedOptionId = optEvent.recommendedOptionId
+        base.confidence = optEvent.confidence
+        base.blastRadius = optEvent.blastRadius
+        base.affectedArtifactIds = optEvent.affectedArtifactIds
+        base.requiresRationale = optEvent.requiresRationale
+        base.summary = optEvent.summary
+        base.dueByTick = optEvent.dueByTick ?? null
+      } else {
+        const toolEvent = d.event as import('../types/events').ToolApprovalEvent
+        base.toolName = toolEvent.toolName
+        base.confidence = toolEvent.confidence
+        base.blastRadius = toolEvent.blastRadius
+        base.affectedArtifactIds = toolEvent.affectedArtifactIds
+        base.dueByTick = toolEvent.dueByTick ?? null
+      }
+
+      return base
+    })
   }
 
   private buildCoherenceSummaries(): CoherenceIssueSummary[] {

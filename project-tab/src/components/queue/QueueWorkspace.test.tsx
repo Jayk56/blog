@@ -13,7 +13,7 @@ function renderWithContext(
   state: ProjectState = initialState,
   dispatch = vi.fn(),
 ) {
-  const value: ProjectContextValue = { state, dispatch }
+  const value: ProjectContextValue = { state, dispatch, api: null, connected: false }
   return {
     dispatch,
     ...render(

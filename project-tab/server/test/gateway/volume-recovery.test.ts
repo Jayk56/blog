@@ -253,7 +253,7 @@ describe('VolumeRecoveryService', () => {
       const artifact = makeArtifact({
         artifactId: 'art-norm',
         provenance: { createdBy: 'a', createdAt: new Date().toISOString(), sourcePath: '/src/file.ts' },
-        uri: 'uploaded'
+        uri: 'artifact://a/art-norm'
       })
 
       const artifactByPath = new Map([['/src/file.ts', artifact]])
@@ -261,6 +261,25 @@ describe('VolumeRecoveryService', () => {
 
       const actions = service.classifyFiles(files, artifactByPath)
       expect(actions[0].type).toBe('skip')
+    })
+
+    it('reuploads when artifact has workspace URI (not backend artifact:// URI)', () => {
+      const artifact = makeArtifact({
+        artifactId: 'art-workspace',
+        provenance: { createdBy: 'agent-1', createdAt: new Date().toISOString(), sourcePath: '/src/local.ts' },
+        uri: '/workspace/output/report.md' // Local workspace URI, not backend
+      })
+
+      const artifactByPath = new Map([['/src/local.ts', artifact]])
+      const files: VolumeFile[] = [{ path: '/workspace/src/local.ts', sizeBytes: 100 }]
+
+      const actions = service.classifyFiles(files, artifactByPath)
+      expect(actions).toHaveLength(1)
+      expect(actions[0].type).toBe('reupload')
+      if (actions[0].type === 'reupload') {
+        expect(actions[0].artifactId).toBe('art-workspace')
+        expect(actions[0].sourcePath).toBe('/workspace/src/local.ts')
+      }
     })
   })
 
@@ -603,7 +622,7 @@ describe('VolumeRecoveryService', () => {
       const artifact = makeArtifact({
         artifactId: 'art-custom',
         provenance: { createdBy: 'a', createdAt: new Date().toISOString(), sourcePath: '/src/main.ts' },
-        uri: 'uploaded'
+        uri: 'artifact://a/art-custom'
       })
 
       const actions = service.classifyFiles(files, new Map([['/src/main.ts', artifact]]))

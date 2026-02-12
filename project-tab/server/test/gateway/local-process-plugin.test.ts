@@ -6,6 +6,7 @@ import { EventBus } from '../../src/bus'
 import type {
   AgentBrief,
   AgentHandle,
+  EventEnvelope,
   KillResponse,
   LocalHttpTransport,
   PluginCapabilities,
@@ -88,9 +89,15 @@ function makeTokenGenerator() {
   }))
 }
 
-/** Creates a mock ChildProcessManager. */
+type ExitListener = (code: number | null, signal: string | null) => void
+
+/** Captured exit listeners from mock process manager, keyed by agentId. */
+const capturedExitListeners = new Map<string, ExitListener[]>()
+
+/** Creates a mock ChildProcessManager that captures exit listeners. */
 function makeMockProcessManager(): ChildProcessManager {
   const pm = new ChildProcessManager(vi.fn() as unknown as typeof globalThis.fetch)
+  capturedExitListeners.clear()
 
   vi.spyOn(pm, 'spawnShim').mockResolvedValue({
     process: { kill: vi.fn(), pid: 12345 } as any,
@@ -99,7 +106,11 @@ function makeMockProcessManager(): ChildProcessManager {
   })
   vi.spyOn(pm, 'killProcess').mockImplementation(() => {})
   vi.spyOn(pm, 'cleanup').mockImplementation(() => {})
-  vi.spyOn(pm, 'onExit').mockImplementation(() => {})
+  vi.spyOn(pm, 'onExit').mockImplementation((agentId: string, listener: ExitListener) => {
+    const listeners = capturedExitListeners.get(agentId) ?? []
+    listeners.push(listener)
+    capturedExitListeners.set(agentId, listeners)
+  })
 
   return pm
 }
@@ -431,6 +442,220 @@ describe('LocalProcessPlugin', () => {
 
         expect(processManager.killProcess).toHaveBeenCalledWith('agent-1')
         expect(processManager.killProcess).toHaveBeenCalledWith('agent-2')
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+  })
+
+  describe('crash detection', () => {
+    it('emits ErrorEvent and LifecycleEvent on unexpected process exit', async () => {
+      const eventBus = new EventBus(100)
+      const handle = makeHandle()
+      const fetchSpy = mockFetch({
+        '/spawn': { status: 200, body: handle },
+      })
+
+      const seen: EventEnvelope[] = []
+      eventBus.subscribe({}, (env) => seen.push(env))
+
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = fetchSpy
+      try {
+        const plugin = makePlugin(processManager, { eventBus })
+        await plugin.spawn(makeMinimalBrief())
+
+        // Simulate process crash (non-zero exit code)
+        const listeners = capturedExitListeners.get('agent-1') ?? []
+        expect(listeners).toHaveLength(1)
+        listeners[0](1, null)
+
+        expect(seen).toHaveLength(2)
+
+        const errorEvent = seen.find((e) => e.event.type === 'error')
+        expect(errorEvent).toBeDefined()
+        expect(errorEvent!.event.type).toBe('error')
+        if (errorEvent!.event.type === 'error') {
+          expect(errorEvent!.event.severity).toBe('critical')
+          expect(errorEvent!.event.recoverable).toBe(false)
+          expect(errorEvent!.event.category).toBe('internal')
+          expect(errorEvent!.event.message).toContain('code=1')
+        }
+
+        const lifecycleEvent = seen.find((e) => e.event.type === 'lifecycle')
+        expect(lifecycleEvent).toBeDefined()
+        if (lifecycleEvent!.event.type === 'lifecycle') {
+          expect(lifecycleEvent!.event.action).toBe('crashed')
+          expect(lifecycleEvent!.event.reason).toContain('code=1')
+        }
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    it('emits crash events on signal kill', async () => {
+      const eventBus = new EventBus(100)
+      const handle = makeHandle()
+      const fetchSpy = mockFetch({
+        '/spawn': { status: 200, body: handle },
+      })
+
+      const seen: EventEnvelope[] = []
+      eventBus.subscribe({}, (env) => seen.push(env))
+
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = fetchSpy
+      try {
+        const plugin = makePlugin(processManager, { eventBus })
+        await plugin.spawn(makeMinimalBrief())
+
+        // Simulate signal-killed process
+        const listeners = capturedExitListeners.get('agent-1') ?? []
+        listeners[0](null, 'SIGKILL')
+
+        expect(seen).toHaveLength(2)
+        const errorEvent = seen.find((e) => e.event.type === 'error')
+        if (errorEvent!.event.type === 'error') {
+          expect(errorEvent!.event.message).toContain('SIGKILL')
+        }
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    it('does not emit crash events on clean exit (code 0)', async () => {
+      const eventBus = new EventBus(100)
+      const handle = makeHandle()
+      const fetchSpy = mockFetch({
+        '/spawn': { status: 200, body: handle },
+      })
+
+      const seen: EventEnvelope[] = []
+      eventBus.subscribe({}, (env) => seen.push(env))
+
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = fetchSpy
+      try {
+        const plugin = makePlugin(processManager, { eventBus })
+        await plugin.spawn(makeMinimalBrief())
+
+        const listeners = capturedExitListeners.get('agent-1') ?? []
+        listeners[0](0, null)
+
+        expect(seen).toHaveLength(0)
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    it('deduplicates crash events (only fires once)', async () => {
+      const eventBus = new EventBus(100)
+      const handle = makeHandle()
+      const fetchSpy = mockFetch({
+        '/spawn': { status: 200, body: handle },
+      })
+
+      const seen: EventEnvelope[] = []
+      eventBus.subscribe({}, (env) => seen.push(env))
+
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = fetchSpy
+      try {
+        const plugin = makePlugin(processManager, { eventBus })
+        await plugin.spawn(makeMinimalBrief())
+
+        // First crash trigger via process exit
+        const listeners = capturedExitListeners.get('agent-1') ?? []
+        listeners[0](1, null)
+
+        expect(seen).toHaveLength(2)
+
+        // Second crash trigger (e.g., WS disconnect) should be deduped
+        // We simulate this by calling the exit listener again
+        listeners[0](1, null)
+
+        // Still only 2 events (the original ErrorEvent + LifecycleEvent)
+        expect(seen).toHaveLength(2)
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    it('does not fire crash handler after intentional kill', async () => {
+      const eventBus = new EventBus(100)
+      const handle = makeHandle()
+      const killResponse: KillResponse = { artifactsExtracted: 0, cleanShutdown: true }
+      const fetchSpy = mockFetch({
+        '/spawn': { status: 200, body: handle },
+        '/kill': { status: 200, body: killResponse },
+      })
+
+      const seen: EventEnvelope[] = []
+      eventBus.subscribe({}, (env) => seen.push(env))
+
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = fetchSpy
+      try {
+        const plugin = makePlugin(processManager, { eventBus })
+        await plugin.spawn(makeMinimalBrief())
+
+        // Intentional kill
+        await plugin.kill(handle)
+
+        // Now simulate process exit (which happens after kill)
+        const listeners = capturedExitListeners.get('agent-1') ?? []
+        if (listeners.length > 0) {
+          listeners[0](0, null)
+        }
+
+        // No crash events should have been emitted
+        expect(seen).toHaveLength(0)
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    it('cleans up agent record on crash', async () => {
+      const eventBus = new EventBus(100)
+      const handle = makeHandle()
+      const fetchSpy = mockFetch({
+        '/spawn': { status: 200, body: handle },
+      })
+
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = fetchSpy
+      try {
+        const plugin = makePlugin(processManager, { eventBus })
+        await plugin.spawn(makeMinimalBrief())
+
+        // Verify agent has a transport (is tracked)
+        expect(plugin.getTransport('agent-1')).toBeDefined()
+
+        // Trigger crash
+        const listeners = capturedExitListeners.get('agent-1') ?? []
+        listeners[0](1, null)
+
+        // Agent record should be cleaned up
+        expect(plugin.getTransport('agent-1')).toBeUndefined()
+        expect(processManager.cleanup).toHaveBeenCalledWith('agent-1', 9100)
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    it('registers onExit listener during spawn', async () => {
+      const handle = makeHandle()
+      const fetchSpy = mockFetch({
+        '/spawn': { status: 200, body: handle },
+      })
+
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = fetchSpy
+      try {
+        const plugin = makePlugin(processManager)
+        await plugin.spawn(makeMinimalBrief())
+
+        expect(processManager.onExit).toHaveBeenCalledWith('agent-1', expect.any(Function))
       } finally {
         globalThis.fetch = originalFetch
       }

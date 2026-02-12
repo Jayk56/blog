@@ -82,8 +82,8 @@ export function createAgentsRouter(deps: ApiRouteDeps): Router {
     }
 
     plugin.kill(handle, { grace: body.grace, graceTimeoutMs: body.graceTimeoutMs }).then((killResponse) => {
-      // Handle orphaned decisions
-      const orphaned = deps.decisionQueue.handleAgentKilled(handle.id)
+      // Schedule orphaned decisions for triage after grace period
+      const orphaned = deps.decisionQueue.scheduleOrphanTriage(handle.id, deps.tickService.currentTick())
 
       deps.registry.removeHandle(handle.id)
       deps.contextInjection?.removeAgent(handle.id)
@@ -263,6 +263,31 @@ export function createAgentsRouter(deps: ApiRouteDeps): Router {
     }
 
     res.status(200).json({ agentId, checkpoint })
+  })
+
+  // Volume recovery endpoint
+  router.post('/:id/recover-artifacts', (req, res) => {
+    const agentId = req.params.id
+
+    if (!deps.volumeRecovery) {
+      res.status(503).json({ error: 'Volume recovery not available (Docker not configured)' })
+      return
+    }
+
+    if (!deps.knowledgeStoreImpl) {
+      res.status(503).json({ error: 'Knowledge store not available for artifact queries' })
+      return
+    }
+
+    const knownArtifacts = deps.knowledgeStoreImpl.listArtifacts().filter(
+      (a) => a.agentId === agentId
+    )
+
+    deps.volumeRecovery.recover(agentId, knownArtifacts).then((result) => {
+      res.status(200).json(result)
+    }).catch((err: Error) => {
+      res.status(500).json({ error: 'Recovery failed', message: err.message })
+    })
   })
 
   return router

@@ -179,7 +179,7 @@ class MockRunner:
                 sessionId=self.session_id,
             )
 
-            now_iso = datetime.now(timezone.utc).isoformat()
+            now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
             artifact_id = str(uuid.uuid4())
             await self._emit(ArtifactEvent(
                 agentId=self.agent_id,

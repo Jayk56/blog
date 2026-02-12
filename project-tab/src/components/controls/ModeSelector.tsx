@@ -8,7 +8,7 @@
 import { Check, X } from 'lucide-react'
 import type { ControlMode } from '../../types/index.js'
 import type { ModeShiftRecommendation } from '../../types/index.js'
-import { useProjectDispatch } from '../../lib/context.js'
+import { useProjectDispatch, useApi } from '../../lib/context.js'
 
 interface ModeSelectorProps {
   currentMode: ControlMode
@@ -34,6 +34,7 @@ const modes: ControlMode[] = ['orchestrator', 'adaptive', 'ecosystem']
 
 export default function ModeSelector({ currentMode, recommendations }: ModeSelectorProps) {
   const dispatch = useProjectDispatch()
+  const api = useApi()
   const pending = recommendations.filter(r => r.status === 'pending')
 
   return (
@@ -49,7 +50,12 @@ export default function ModeSelector({ currentMode, recommendations }: ModeSelec
           return (
             <button
               key={mode}
-              onClick={() => dispatch({ type: 'set-mode', mode })}
+              onClick={() => {
+                dispatch({ type: 'set-mode', mode })
+                api?.setControlMode(mode).catch(() => {
+                  dispatch({ type: 'set-mode', mode: currentMode })
+                })
+              }}
               className={`w-full text-left p-3 rounded-lg border transition-colors ${
                 isActive
                   ? 'bg-accent/10 border-accent/30 text-text-primary'

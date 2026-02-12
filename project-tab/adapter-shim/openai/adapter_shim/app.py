@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
+from .artifact_upload import get_artifact_upload_endpoint, rewrite_artifact_uri
 from .mock_runner import MockRunner
 from .models import (
     AgentBrief,
@@ -123,6 +124,15 @@ def create_app(*, mock: bool = False) -> FastAPI:
         serialized = state.runner.get_checkpoint(decision_id)
         return serialized.model_dump(by_alias=True)
 
+    # Only expose debug config endpoint in mock mode
+    if mock:
+        @app.get("/debug/config")
+        async def debug_config() -> dict:
+            if state.runner is None:
+                return {"providerConfig": None}
+            provider_config = state.runner.brief.provider_config
+            return {"providerConfig": provider_config}
+
     @app.post("/inject-context")
     async def inject_context(injection: ContextInjection) -> dict:
         # Plumbing only in Phase 1 -- accept but don't act
@@ -147,6 +157,7 @@ def create_app(*, mock: bool = False) -> FastAPI:
     async def events_ws(websocket: WebSocket) -> None:
         await websocket.accept()
         state.ws_connected = True
+        upload_endpoint = get_artifact_upload_endpoint()
 
         try:
             while True:
@@ -156,8 +167,11 @@ def create_app(*, mock: bool = False) -> FastAPI:
                 # Send all buffered events
                 while state.event_buffer:
                     event = state.event_buffer.pop(0)
+                    # Rewrite artifact URIs if upload endpoint is configured
+                    if upload_endpoint:
+                        event = await rewrite_artifact_uri(event, upload_endpoint)
                     await websocket.send_json(
-                        event.model_dump(by_alias=True)
+                        event.model_dump(by_alias=True, exclude_none=True)
                     )
 
                 # Check if the runner is done and no more events
@@ -167,8 +181,10 @@ def create_app(*, mock: bool = False) -> FastAPI:
                     _drain_to_buffer(state)
                     while state.event_buffer:
                         event = state.event_buffer.pop(0)
+                        if upload_endpoint:
+                            event = await rewrite_artifact_uri(event, upload_endpoint)
                         await websocket.send_json(
-                            event.model_dump(by_alias=True)
+                            event.model_dump(by_alias=True, exclude_none=True)
                         )
 
                 await asyncio.sleep(0.05)

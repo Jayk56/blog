@@ -54,7 +54,7 @@ const loadedState: ProjectState = {
 function renderWithProviders(state: ProjectState) {
   return render(
     <MemoryRouter>
-      <ProjectContext.Provider value={{ state, dispatch: () => {} }}>
+      <ProjectContext.Provider value={{ state, dispatch: () => {}, api: null, connected: false }}>
         <BriefingWorkspace />
       </ProjectContext.Provider>
     </MemoryRouter>,

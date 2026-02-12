@@ -26,10 +26,12 @@ class EventFactory:
     def wrap(self, event: AgentEvent) -> AdapterEvent:
         """Wrap an AgentEvent payload in an AdapterEvent envelope."""
         self._sequence += 1
+        # Use 'Z' suffix instead of '+00:00' for Zod datetime() compatibility
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
         return AdapterEvent(
             sourceEventId=str(uuid.uuid4()),
             sourceSequence=self._sequence,
-            sourceOccurredAt=datetime.now(timezone.utc).isoformat(),
+            sourceOccurredAt=now,
             runId=self._run_id,
             event=event,
         )

@@ -993,4 +993,91 @@ describe('KnowledgeStore (SQLite)', () => {
       expect(store.getArtifact('art-race')!.status).toBe('approved')
     })
   })
+
+  // =========================================================================
+  // Artifact content storage
+  // =========================================================================
+
+  describe('artifact content storage', () => {
+    it('stores and retrieves artifact content', () => {
+      const result = store.storeArtifactContent('agent-1', 'art-c1', 'Hello World', 'text/plain')
+
+      expect(result.backendUri).toBe('artifact://agent-1/art-c1')
+      expect(result.artifactId).toBe('art-c1')
+      expect(result.stored).toBe(true)
+
+      const retrieved = store.getArtifactContent('agent-1', 'art-c1')
+      expect(retrieved).toBeDefined()
+      expect(retrieved!.content).toBe('Hello World')
+      expect(retrieved!.mimeType).toBe('text/plain')
+      expect(retrieved!.backendUri).toBe('artifact://agent-1/art-c1')
+    })
+
+    it('stores content without mimeType', () => {
+      store.storeArtifactContent('agent-1', 'art-c2', 'raw data')
+
+      const retrieved = store.getArtifactContent('agent-1', 'art-c2')
+      expect(retrieved).toBeDefined()
+      expect(retrieved!.content).toBe('raw data')
+      expect(retrieved!.mimeType).toBeNull()
+    })
+
+    it('returns undefined for nonexistent content', () => {
+      const retrieved = store.getArtifactContent('agent-1', 'nonexistent')
+      expect(retrieved).toBeUndefined()
+    })
+
+    it('overwrites content on duplicate artifactId', () => {
+      store.storeArtifactContent('agent-1', 'art-c3', 'version-1', 'text/plain')
+      store.storeArtifactContent('agent-1', 'art-c3', 'version-2', 'text/markdown')
+
+      const retrieved = store.getArtifactContent('agent-1', 'art-c3')
+      expect(retrieved).toBeDefined()
+      expect(retrieved!.content).toBe('version-2')
+      expect(retrieved!.mimeType).toBe('text/markdown')
+    })
+
+    it('keeps content separate for different agents with same artifactId', () => {
+      store.storeArtifactContent('agent-1', 'art-shared', 'agent-1 content', 'text/plain')
+      store.storeArtifactContent('agent-2', 'art-shared', 'agent-2 content', 'text/markdown')
+
+      const retrieved1 = store.getArtifactContent('agent-1', 'art-shared')
+      const retrieved2 = store.getArtifactContent('agent-2', 'art-shared')
+
+      expect(retrieved1).toBeDefined()
+      expect(retrieved1!.content).toBe('agent-1 content')
+      expect(retrieved1!.mimeType).toBe('text/plain')
+      expect(retrieved1!.backendUri).toBe('artifact://agent-1/art-shared')
+
+      expect(retrieved2).toBeDefined()
+      expect(retrieved2!.content).toBe('agent-2 content')
+      expect(retrieved2!.mimeType).toBe('text/markdown')
+      expect(retrieved2!.backendUri).toBe('artifact://agent-2/art-shared')
+    })
+
+    it('generates consistent backendUri format', () => {
+      const result1 = store.storeArtifactContent('agent-x', 'art-123', 'data')
+      const result2 = store.storeArtifactContent('agent-y', 'art-456', 'other')
+
+      expect(result1.backendUri).toBe('artifact://agent-x/art-123')
+      expect(result2.backendUri).toBe('artifact://agent-y/art-456')
+    })
+
+    it('stores empty string content', () => {
+      store.storeArtifactContent('agent-1', 'art-empty', '')
+
+      const retrieved = store.getArtifactContent('agent-1', 'art-empty')
+      expect(retrieved).toBeDefined()
+      expect(retrieved!.content).toBe('')
+    })
+
+    it('stores large content', () => {
+      const largeContent = 'x'.repeat(100000)
+      store.storeArtifactContent('agent-1', 'art-large', largeContent, 'application/octet-stream')
+
+      const retrieved = store.getArtifactContent('agent-1', 'art-large')
+      expect(retrieved).toBeDefined()
+      expect(retrieved!.content.length).toBe(100000)
+    })
+  })
 })

@@ -92,5 +92,10 @@ export type {
   AcceptRecommendationAction,
   RejectRecommendationAction,
   ToggleAutoSimulateAction,
+  ServerStateSyncAction,
+  ServerEventAction,
+  ServerTrustUpdateAction,
+  ServerDecisionResolvedAction,
+  ServerBrakeAction,
   ProjectAction,
 } from './state.js';

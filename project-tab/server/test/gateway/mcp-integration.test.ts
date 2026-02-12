@@ -104,7 +104,7 @@ describe('ContainerPlugin + MCPProvisioner integration', () => {
       orchestrator,
       image: 'project-tab/adapter-openai:latest',
       backendUrl: 'http://localhost:3001',
-      generateToken: () => ({
+      generateToken: async () => ({
         token: 'test-token',
         expiresAt: '2026-02-12T00:00:00.000Z',
       }),
@@ -146,7 +146,7 @@ describe('ContainerPlugin + MCPProvisioner integration', () => {
       orchestrator,
       image: 'project-tab/adapter-openai:latest',
       backendUrl: 'http://localhost:3001',
-      generateToken: () => ({
+      generateToken: async () => ({
         token: 'test-token',
         expiresAt: '2026-02-12T00:00:00.000Z',
       }),
@@ -179,7 +179,7 @@ describe('ContainerPlugin + MCPProvisioner integration', () => {
       orchestrator,
       image: 'project-tab/adapter-openai:latest',
       backendUrl: 'http://localhost:3001',
-      generateToken: () => ({
+      generateToken: async () => ({
         token: 'test-token',
         expiresAt: '2026-02-12T00:00:00.000Z',
       }),
@@ -227,7 +227,7 @@ describe('ContainerPlugin + MCPProvisioner integration', () => {
       orchestrator,
       image: 'project-tab/adapter-openai:latest',
       backendUrl: 'http://localhost:3001',
-      generateToken: () => ({
+      generateToken: async () => ({
         token: 'test-token',
         expiresAt: '2026-02-12T00:00:00.000Z',
       }),
@@ -287,7 +287,7 @@ describe('ContainerPlugin + MCPProvisioner integration', () => {
       orchestrator,
       image: 'project-tab/adapter-openai:latest',
       backendUrl: 'http://localhost:3001',
-      generateToken: () => ({
+      generateToken: async () => ({
         token: 'agent-specific-token',
         expiresAt: '2026-02-12T00:00:00.000Z',
       }),

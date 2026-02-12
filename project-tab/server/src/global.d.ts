@@ -9,6 +9,8 @@ declare module 'express' {
   export interface Response {
     status(code: number): this
     json(body: unknown): this
+    setHeader(name: string, value: string | number | readonly string[]): this
+    send(body: unknown): this
   }
 
   export type NextFunction = () => void
@@ -21,6 +23,7 @@ declare module 'express' {
     post(path: string, handler: RequestHandler): this
     put(path: string, handler: RequestHandler): this
     patch(path: string, handler: RequestHandler): this
+    delete(path: string, handler: RequestHandler): this
   }
 
   export interface Express extends Router {}

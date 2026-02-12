@@ -212,8 +212,8 @@ export class VolumeRecoveryService {
         continue
       }
 
-      if (artifact.uri) {
-        // Artifact has a URI — content was already uploaded
+      if (artifact.uri && artifact.uri.startsWith('artifact://')) {
+        // Artifact has a backend URI — content was already uploaded
         actions.push({
           type: 'skip',
           reason: 'already_uploaded',
@@ -274,7 +274,7 @@ export class VolumeRecoveryService {
   async listVolumeFiles(volumeName: string): Promise<VolumeFile[]> {
     const container = await this.docker.createContainer({
       Image: this.helperImage,
-      Cmd: ['find', this.workspacePath, '-type', 'f', '-printf', '%s %p\\n'],
+      Cmd: ['sh', '-c', `find ${this.workspacePath} -type f -exec stat -c '%s %n' {} +`],
       HostConfig: {
         Binds: [`${volumeName}:${this.workspacePath}:ro`],
         AutoRemove: true
@@ -300,6 +300,7 @@ export class VolumeRecoveryService {
     const container = await this.docker.createContainer({
       Image: this.helperImage,
       Cmd: ['cat', filePath],
+      Tty: true, // Enable TTY to prevent Docker log framing headers
       HostConfig: {
         Binds: [`${volumeName}:${this.workspacePath}:ro`],
         AutoRemove: true

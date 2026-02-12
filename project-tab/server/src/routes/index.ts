@@ -4,7 +4,9 @@ import type { TickService } from '../tick'
 import type { EventBus } from '../bus'
 import type { WebSocketHub } from '../ws-hub'
 import type { AgentPlugin, AgentHandle, KnowledgeSnapshot, SerializedAgentState } from '../types'
-import type { StoredCheckpoint } from '../intelligence/knowledge-store'
+import type { ArtifactEvent } from '../types/events'
+import type { StoredCheckpoint, KnowledgeStore as KnowledgeStoreClass } from '../intelligence/knowledge-store'
+import type { RecoveryResult } from '../gateway/volume-recovery'
 import type { TrustEngine } from '../intelligence/trust-engine'
 import type { DecisionQueue } from '../intelligence/decision-queue'
 import { createAgentsRouter } from './agents'
@@ -12,6 +14,7 @@ import { createArtifactsRouter } from './artifacts'
 import { createBrakeRouter } from './brake'
 import { createControlModeRouter } from './control'
 import { createDecisionsRouter } from './decisions'
+import { createQuarantineRouter } from './quarantine'
 import { createTickRouter } from './tick'
 import { createTokenRouter } from './token'
 import { createTrustRouter } from './trust'
@@ -27,10 +30,18 @@ export interface AgentRegistry {
   removeHandle(agentId: string): void
 }
 
+/** Result returned from artifact upload. */
+export interface ArtifactUploadResult {
+  backendUri: string
+  artifactId: string
+  stored: boolean
+}
+
 /** Knowledge store interface used by routes. */
 export interface KnowledgeStore {
   getSnapshot(workstream?: string): Promise<KnowledgeSnapshot>
   appendEvent(envelope: import('../types').EventEnvelope): Promise<void>
+  storeArtifactContent?(agentId: string, artifactId: string, content: string, mimeType?: string): ArtifactUploadResult
 }
 
 /** Agent gateway interface used by routes. */
@@ -74,6 +85,11 @@ export interface ApiRouteDeps {
     onBriefUpdated(agentId: string): Promise<boolean>
   }
   defaultPlugin?: string
+  volumeRecovery?: {
+    recover(agentId: string, knownArtifacts: ArtifactEvent[]): Promise<RecoveryResult>
+  }
+  /** Direct reference to the KnowledgeStore implementation for artifact queries. */
+  knowledgeStoreImpl?: KnowledgeStoreClass
 }
 
 /**
@@ -92,6 +108,7 @@ export function createApiRouter(deps: ApiRouteDeps): Router {
   router.use('/brake', createBrakeRouter(deps))
   router.use('/control-mode', createControlModeRouter(deps))
   router.use('/trust', createTrustRouter(deps))
+  router.use('/quarantine', createQuarantineRouter())
   router.use('/tick', createTickRouter({ tickService: deps.tickService }))
 
   if (deps.tokenService) {
