@@ -16,13 +16,3 @@ export function parseBody<T>(req: Request, res: Response, schema: ZodSchema<T>):
 
   return parsed.data
 }
-
-/**
- * Returns a standard 501 placeholder response for Wave 2 handlers.
- */
-export function notImplemented(res: Response, feature: string): void {
-  res.status(501).json({
-    error: 'Not Implemented',
-    message: `${feature} depends on Intelligence Layer components and is out of scope for Wave 1 backend-core.`
-  })
-}

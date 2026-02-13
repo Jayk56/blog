@@ -12,6 +12,7 @@ import express, { type Request, type Response } from 'express'
 import { WebSocketServer, WebSocket } from 'ws'
 import type http from 'node:http'
 import { getArtifactUploadEndpoint, rewriteArtifactUri } from './artifact-upload.js'
+import { ClaudeRunner } from './claude-runner.js'
 import { MockRunner } from './mock-runner.js'
 import type {
   AdapterEvent,
@@ -27,18 +28,20 @@ const MAX_EVENT_BUFFER = 1000
 
 export interface AppState {
   mock: boolean
-  runner: MockRunner | null
+  workspace?: string
+  runner: MockRunner | ClaudeRunner | null
   eventBuffer: AdapterEvent[]
   wsConnected: boolean
   startTime: number
 }
 
-export function createApp(options: { mock?: boolean } = {}): express.Express {
+export function createApp(options: { mock?: boolean; workspace?: string } = {}): express.Express {
   const app = express()
   app.use(express.json())
 
   const state: AppState = {
     mock: options.mock ?? false,
+    workspace: options.workspace,
     runner: null,
     eventBuffer: [],
     wsConnected: false,
@@ -79,7 +82,13 @@ export function createApp(options: { mock?: boolean } = {}): express.Express {
     }
 
     const brief: AgentBrief = req.body
-    const runner = new MockRunner(brief)
+
+    let runner: MockRunner | ClaudeRunner
+    if (state.mock) {
+      runner = new MockRunner(brief)
+    } else {
+      runner = new ClaudeRunner(brief, { workspace: state.workspace })
+    }
     state.runner = runner
     runner.start()
 
@@ -119,7 +128,14 @@ export function createApp(options: { mock?: boolean } = {}): express.Express {
   app.post('/resume', async (req: Request, res: Response) => {
     const agentState: SerializedAgentState = req.body
     const brief = agentState.briefSnapshot
-    const runner = new MockRunner(brief)
+
+    let runner: MockRunner | ClaudeRunner
+    if (state.mock) {
+      runner = new MockRunner(brief)
+    } else {
+      const resumeSessionId = agentState.checkpoint?.sessionId ?? agentState.sessionId
+      runner = new ClaudeRunner(brief, { workspace: state.workspace, resumeSessionId })
+    }
     state.runner = runner
     runner.start()
 

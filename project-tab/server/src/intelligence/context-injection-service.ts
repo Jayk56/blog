@@ -11,7 +11,7 @@ import type {
   KnowledgeSnapshot,
 } from '../types'
 import type { ControlMode, Severity } from '../types/events'
-import type { AgentRegistry, AgentGateway, KnowledgeStore, ControlModeManager } from '../routes'
+import type { AgentRegistry, AgentGateway, KnowledgeStore, ControlModeManager } from '../types/service-interfaces'
 
 /**
  * Per-agent injection tracking state.

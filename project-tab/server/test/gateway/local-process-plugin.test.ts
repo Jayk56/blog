@@ -270,7 +270,7 @@ describe('LocalProcessPlugin', () => {
         expect(result.cleanShutdown).toBe(true)
         expect(result.artifactsExtracted).toBe(2)
         expect(processManager.killProcess).toHaveBeenCalledWith('agent-1')
-        expect(processManager.cleanup).toHaveBeenCalledWith('agent-1', 9100)
+        expect(processManager.cleanup).toHaveBeenCalledWith('agent-1')
       } finally {
         globalThis.fetch = originalFetch
       }
@@ -296,7 +296,7 @@ describe('LocalProcessPlugin', () => {
         expect(result.cleanShutdown).toBe(false)
         expect(result.artifactsExtracted).toBe(0)
         expect(processManager.killProcess).toHaveBeenCalledWith('agent-1')
-        expect(processManager.cleanup).toHaveBeenCalledWith('agent-1', 9100)
+        expect(processManager.cleanup).toHaveBeenCalledWith('agent-1')
       } finally {
         globalThis.fetch = originalFetch
       }
@@ -637,7 +637,7 @@ describe('LocalProcessPlugin', () => {
 
         // Agent record should be cleaned up
         expect(plugin.getTransport('agent-1')).toBeUndefined()
-        expect(processManager.cleanup).toHaveBeenCalledWith('agent-1', 9100)
+        expect(processManager.cleanup).toHaveBeenCalledWith('agent-1')
       } finally {
         globalThis.fetch = originalFetch
       }

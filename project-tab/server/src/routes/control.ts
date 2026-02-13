@@ -4,43 +4,34 @@ import { setControlModeRequestSchema } from '../validation/schemas'
 import { parseBody } from './utils'
 import type { ApiRouteDeps } from './index'
 
+type ControlModeDeps = Pick<
+  ApiRouteDeps,
+  'controlMode' | 'wsHub' | 'registry' | 'trustEngine' | 'knowledgeStore'
+>
+
 /**
  * Creates routes for /api/control-mode endpoints.
  */
-export function createControlModeRouter(deps: ApiRouteDeps): Router {
+export function createControlModeRouter(deps: ControlModeDeps): Router {
   const router = Router()
 
   router.get('/', (_req, res) => {
     res.status(200).json({ controlMode: deps.controlMode.getMode() })
   })
 
-  router.put('/', (req, res) => {
+  router.put('/', async (req, res) => {
     const body = parseBody(req, res, setControlModeRequestSchema)
     if (!body) {
       return
     }
 
     deps.controlMode.setMode(body.controlMode)
+    const snapshot = await deps.knowledgeStore.getSnapshot()
 
     // Broadcast state sync to frontend with updated control mode
     deps.wsHub.broadcast({
       type: 'state_sync',
-      snapshot: {
-        version: 0,
-        generatedAt: new Date().toISOString(),
-        workstreams: [],
-        pendingDecisions: [],
-        recentCoherenceIssues: [],
-        artifactIndex: [],
-        activeAgents: deps.registry.listHandles().map((h) => ({
-          id: h.id,
-          role: 'agent',
-          workstream: '',
-          status: h.status,
-          pluginName: h.pluginName
-        })),
-        estimatedTokens: 0
-      },
+      snapshot,
       activeAgents: deps.registry.listHandles(),
       trustScores: deps.trustEngine.getAllScores(),
       controlMode: body.controlMode

@@ -157,7 +157,7 @@ export class LocalProcessPlugin implements AgentPlugin {
       // Clean up the spawned process if the RPC spawn call fails
       eventStream.close()
       this.processManager.killProcess(agentId)
-      this.processManager.cleanup(agentId, result.port)
+      this.processManager.cleanup(agentId)
       this.agents.delete(agentId)
       throw err
     }
@@ -187,7 +187,7 @@ export class LocalProcessPlugin implements AgentPlugin {
     // Disconnect event stream and clean up
     record.eventStream.close()
     this.processManager.killProcess(handle.id)
-    this.processManager.cleanup(handle.id, record.port)
+    this.processManager.cleanup(handle.id)
     this.agents.delete(handle.id)
 
     return response
@@ -229,7 +229,7 @@ export class LocalProcessPlugin implements AgentPlugin {
         record.crashHandled = true
         record.eventStream.close()
         this.processManager.killProcess(id)
-        this.processManager.cleanup(id, record.port)
+        this.processManager.cleanup(id)
         this.agents.delete(id)
       }
     }
@@ -248,7 +248,7 @@ export class LocalProcessPlugin implements AgentPlugin {
 
     // Clean up the agent record (always release resources, even on clean exit)
     record.eventStream.close()
-    this.processManager.cleanup(agentId, record.port)
+    this.processManager.cleanup(agentId)
     this.agents.delete(agentId)
 
     // Notify external state (e.g. registry) so the agent handle is removed

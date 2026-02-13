@@ -1,26 +1,25 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createServer } from 'node:http'
+import { listenEphemeral } from '../helpers/listen-ephemeral'
 import express from 'express'
 
 import { createQuarantineRouter } from '../../src/routes/quarantine'
 import { quarantineEvent, clearQuarantine, getQuarantined } from '../../src/validation/quarantine'
 import { ZodError } from 'zod'
 
-let testPort = 9600
-
 function createTestApp() {
   const app = express()
   app.use(express.json())
   app.use('/api/quarantine', createQuarantineRouter())
-  const port = testPort++
   const server = createServer(app as any)
-  const baseUrl = `http://localhost:${port}`
+  let baseUrl = ''
 
   return {
     server,
-    baseUrl,
+    get baseUrl() { return baseUrl },
     async start() {
-      await new Promise<void>((resolve) => server.listen(port, resolve))
+      const port = await listenEphemeral(server)
+      baseUrl = `http://localhost:${port}`
     },
     async close() {
       await new Promise<void>((resolve) => server.close(() => resolve()))

@@ -13,6 +13,7 @@
  * criteria.
  */
 import { createServer, type Server } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { WebSocket, WebSocketServer } from 'ws'
 
 import type { AdapterEvent, AgentBrief } from '../../src/types'
@@ -27,7 +28,7 @@ export interface MockShimEvent {
 
 /** Configuration for the mock adapter shim. */
 export interface MockShimConfig {
-  port: number
+  port?: number
   events: MockShimEvent[]
   /** If true, health check initially returns unhealthy, then healthy after startupDelayMs. */
   simulateSlowStartup?: boolean
@@ -259,7 +260,7 @@ export function createMockAdapterShim(config: MockShimConfig) {
 
     start(): Promise<void> {
       return new Promise((resolve) => {
-        server.listen(config.port, () => resolve())
+        server.listen(config.port ?? 0, () => resolve())
       })
     },
 
@@ -283,7 +284,7 @@ export function createMockAdapterShim(config: MockShimConfig) {
     },
 
     getPort() {
-      return config.port
+      return (server.address() as AddressInfo).port
     },
   }
 }

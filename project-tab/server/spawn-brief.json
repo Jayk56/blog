@@ -1,0 +1,33 @@
+{
+  "brief": {
+    "agentId": "maya-1",
+    "role": "Developer",
+    "description": "",
+    "workstream": "backend",
+    "readableWorkstreams": [],
+    "constraints": [],
+    "escalationProtocol": {
+      "alwaysEscalate": [],
+      "escalateWhen": [],
+      "neverEscalate": []
+    },
+    "controlMode": "orchestrator",
+    "projectBrief": {
+      "title": "Project Tab",
+      "description": "AI agent orchestration system",
+      "goals": ["Develop plan for gemini agents sdk shim"],
+      "checkpoints": ["plan ready for review"]
+    },
+    "knowledgeSnapshot": {
+      "version": 0,
+      "generatedAt": "2026-02-12T00:00:00Z",
+      "workstreams": [],
+      "pendingDecisions": [],
+      "recentCoherenceIssues": [],
+      "artifactIndex": [],
+      "activeAgents": [],
+      "estimatedTokens": 0
+    },
+    "allowedTools": ["Read", "Write", "Bash"]
+  }
+}

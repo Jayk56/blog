@@ -30,13 +30,9 @@ import type {
   WorkspaceEventMessage,
 } from '../../src/types'
 
+import { listenEphemeral } from '../helpers/listen-ephemeral'
+
 // ── Helpers ────────────────────────────────────────────────────────
-
-let portCounter = 9500
-
-function allocPort(): number {
-  return portCounter++
-}
 
 function emptySnapshot(): KnowledgeSnapshot {
   return {
@@ -107,9 +103,6 @@ describe('Layer 0 coherence via event bus pipeline', () => {
   let wsUrl: string
 
   beforeEach(async () => {
-    portCounter = 9500 + Math.floor(Math.random() * 50)
-    const port = allocPort()
-
     tickService = new TickService({ mode: 'manual' })
     eventBus = new EventBus()
     classifier = new EventClassifier()
@@ -161,10 +154,7 @@ describe('Layer 0 coherence via event bus pipeline', () => {
 
     tickService.start()
 
-    await new Promise<void>((resolve) => {
-      server.listen(port, () => resolve())
-    })
-
+    const port = await listenEphemeral(server)
     wsUrl = `ws://localhost:${port}/ws`
   })
 

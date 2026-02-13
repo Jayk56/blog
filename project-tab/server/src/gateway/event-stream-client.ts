@@ -1,9 +1,14 @@
 import { WebSocket } from 'ws'
+import type { ZodError } from 'zod'
 
 import type { EventBus } from '../bus'
-import type { EventEnvelope } from '../types'
+import type { AdapterEvent, EventEnvelope } from '../types'
 import { validateAdapterEvent } from '../validation/schemas'
 import { quarantineEvent } from '../validation/quarantine'
+
+type ValidateEventResult =
+  | { ok: true; event: AdapterEvent }
+  | { ok: false; raw: unknown; error: ZodError }
 
 /** Minimal interface for a WebSocket constructor (allows test mocks). */
 export interface WebSocketLike {
@@ -31,6 +36,10 @@ export interface EventStreamClientOptions {
   onDisconnect?: () => void
   /** WebSocket constructor — injectable for testing. */
   WebSocketCtor?: WebSocketFactory
+  /** Event validator override (defaults to validateAdapterEvent). */
+  validateEvent?: (raw: unknown) => ValidateEventResult
+  /** Quarantine handler override (defaults to quarantineEvent). */
+  onQuarantine?: (raw: unknown, error: ZodError) => void
 }
 
 /**
@@ -52,6 +61,8 @@ export class EventStreamClient {
   private readonly initialReconnectDelayMs: number
   private readonly onDisconnect?: () => void
   private readonly WebSocketCtor: WebSocketFactory
+  private readonly validateEvent: (raw: unknown) => ValidateEventResult
+  private readonly onQuarantine: (raw: unknown, error: ZodError) => void
 
   private reconnectAttempts = 0
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -66,6 +77,10 @@ export class EventStreamClient {
     this.initialReconnectDelayMs = options.initialReconnectDelayMs ?? 500
     this.onDisconnect = options.onDisconnect
     this.WebSocketCtor = options.WebSocketCtor ?? (WebSocket as unknown as WebSocketFactory)
+    this.validateEvent = options.validateEvent ?? validateAdapterEvent
+    this.onQuarantine = options.onQuarantine ?? ((raw, error) => {
+      quarantineEvent(raw, error)
+    })
   }
 
   /** Connect to the event stream. */
@@ -137,15 +152,15 @@ export class EventStreamClient {
       return
     }
 
-    const result = validateAdapterEvent(parsed)
+    const result = this.validateEvent(parsed)
 
     if (!result.ok) {
-      const entry = quarantineEvent(result.raw, result.error)
+      this.onQuarantine(result.raw, result.error)
       const issues = result.error.issues.map((i) => i.message)
       // eslint-disable-next-line no-console
       console.error(
         `[EventStreamClient:${this.agentId}] invalid event quarantined`,
-        { issues, raw: result.raw, quarantinedAt: entry.quarantinedAt }
+        { issues, raw: result.raw }
       )
       this.emitQuarantineWarning(
         `Malformed adapter event quarantined: ${issues.join('; ')}`

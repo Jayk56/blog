@@ -46,6 +46,7 @@ import type {
   LocalHttpTransport,
 } from '../../src/types'
 
+import { listenEphemeral } from '../helpers/listen-ephemeral'
 import { createMockAdapterShim, type MockAdapterShim } from './mock-adapter-shim'
 import {
   makeAgentBrief,
@@ -65,18 +66,11 @@ import {
 
 // ── Helpers ────────────────────────────────────────────────────────
 
-let portCounter = 9200
-
-function allocPort(): number {
-  return portCounter++
-}
-
 /** Boots a backend server (Express-less: just HTTP+WS) for testing. */
 async function bootTestBackend(options: {
   stateProvider?: StateSnapshotProvider
   tickMode?: 'manual' | 'wall_clock'
 } = {}) {
-  const port = allocPort()
   const tickService = new TickService({ mode: options.tickMode ?? 'manual' })
   const eventBus = new EventBus()
   const classifier = new EventClassifier()
@@ -105,9 +99,7 @@ async function bootTestBackend(options: {
 
   tickService.start()
 
-  await new Promise<void>((resolve) => {
-    server.listen(port, () => resolve())
-  })
+  const port = await listenEphemeral(server)
 
   return {
     server,
@@ -194,39 +186,8 @@ function delay(ms: number): Promise<void> {
 
 describe('Phase 1 Acceptance Criteria', () => {
   beforeEach(() => {
-    portCounter = 9200 + Math.floor(Math.random() * 50)
     resetSeqCounter()
     clearQuarantine()
-  })
-
-  // ────────────────────────────────────────────────────────────────
-  // AC1: OpenAI adapter shim starts as child process on allocated port
-  // ────────────────────────────────────────────────────────────────
-  describe('AC1: Adapter shim child process spawn + port allocation', () => {
-    it('ChildProcessManager allocates ports from the 9100-9199 pool', () => {
-      const cpm = new ChildProcessManager()
-      const port1 = cpm.allocatePort()
-      const port2 = cpm.allocatePort()
-
-      expect(port1).toBeGreaterThanOrEqual(9100)
-      expect(port1).toBeLessThanOrEqual(9199)
-      expect(port2).toBeGreaterThanOrEqual(9100)
-      expect(port2).toBeLessThanOrEqual(9199)
-      expect(port1).not.toBe(port2)
-
-      cpm.releasePort(port1)
-      cpm.releasePort(port2)
-    })
-
-    it('throws when all 100 ports are exhausted', () => {
-      const cpm = new ChildProcessManager()
-      const ports: number[] = []
-      for (let i = 0; i < 100; i++) {
-        ports.push(cpm.allocatePort())
-      }
-      expect(() => cpm.allocatePort()).toThrow('No ports available')
-      for (const p of ports) cpm.releasePort(p)
-    })
   })
 
   // ────────────────────────────────────────────────────────────────
@@ -240,12 +201,11 @@ describe('Phase 1 Acceptance Criteria', () => {
     })
 
     it('shim responds to GET /health after startup', async () => {
-      const shimPort = allocPort()
       shim = createMockAdapterShim({
-        port: shimPort,
         events: [],
       })
       await shim.start()
+      const shimPort = shim.getPort()
 
       const res = await fetch(`http://localhost:${shimPort}/health`)
       expect(res.status).toBe(200)
@@ -254,14 +214,13 @@ describe('Phase 1 Acceptance Criteria', () => {
     })
 
     it('shim returns 503 during slow startup, then 200 when ready', async () => {
-      const shimPort = allocPort()
       shim = createMockAdapterShim({
-        port: shimPort,
         events: [],
         simulateSlowStartup: true,
         startupDelayMs: 200,
       })
       await shim.start()
+      const shimPort = shim.getPort()
 
       // Initially unhealthy
       const unhealthy = await fetch(`http://localhost:${shimPort}/health`)
@@ -291,13 +250,12 @@ describe('Phase 1 Acceptance Criteria', () => {
 
     it('events flow from adapter shim through event bus to WS client', async () => {
       const agentId = 'agent-ac3'
-      const shimPort = allocPort()
 
       shim = createMockAdapterShim({
-        port: shimPort,
         events: statusAndToolCallSequence(agentId),
       })
       await shim.start()
+      const shimPort = shim.getPort()
 
       backend = await bootTestBackend()
 
@@ -362,13 +320,12 @@ describe('Phase 1 Acceptance Criteria', () => {
 
     it('decision blocks adapter, resolve resumes event emission', async () => {
       const agentId = 'agent-ac4'
-      const shimPort = allocPort()
 
       shim = createMockAdapterShim({
-        port: shimPort,
         events: decisionBlockSequence(agentId),
       })
       await shim.start()
+      const shimPort = shim.getPort()
 
       backend = await bootTestBackend()
       const decisionQueue = new DecisionQueue()
@@ -468,13 +425,12 @@ describe('Phase 1 Acceptance Criteria', () => {
 
     it('artifact events flow through and are stored in KnowledgeStore', async () => {
       const agentId = 'agent-ac5'
-      const shimPort = allocPort()
 
       shim = createMockAdapterShim({
-        port: shimPort,
         events: artifactSequence(agentId),
       })
       await shim.start()
+      const shimPort = shim.getPort()
 
       backend = await bootTestBackend()
       const knowledgeStore = new KnowledgeStore()
@@ -536,13 +492,12 @@ describe('Phase 1 Acceptance Criteria', () => {
 
     it('brake kills agent via POST /kill on shim; orphaned decisions go to triage', async () => {
       const agentId = 'agent-ac6'
-      const shimPort = allocPort()
 
       shim = createMockAdapterShim({
-        port: shimPort,
         events: brakeAndOrphanSequence(agentId),
       })
       await shim.start()
+      const shimPort = shim.getPort()
 
       backend = await bootTestBackend()
       const decisionQueue = new DecisionQueue()
@@ -597,13 +552,12 @@ describe('Phase 1 Acceptance Criteria', () => {
   describe('AC7: REST endpoint contracts', () => {
     it('LocalHttpPlugin translates spawn/kill to HTTP calls on the shim', async () => {
       const agentId = 'agent-ac7'
-      const shimPort = allocPort()
 
       const shim = createMockAdapterShim({
-        port: shimPort,
         events: statusAndToolCallSequence(agentId),
       })
       await shim.start()
+      const shimPort = shim.getPort()
 
       const transport: LocalHttpTransport = {
         type: 'local_http',
@@ -635,7 +589,7 @@ describe('Phase 1 Acceptance Criteria', () => {
       await shim.close()
     })
 
-    it('AgentRegistry supports register/list/kill lifecycle', () => {
+    it('AgentRegistry supports register/list/remove lifecycle', () => {
       const registry = new AgentRegistry()
 
       const handle: AgentHandle = {
@@ -645,25 +599,14 @@ describe('Phase 1 Acceptance Criteria', () => {
         sessionId: 'session-1',
       }
 
-      registry.register(handle, {
-        agentId: 'agent-reg',
-        transport: {
-          type: 'local_http',
-          rpcEndpoint: 'http://localhost:9100',
-          eventStreamEndpoint: 'ws://localhost:9100/events',
-        },
-        providerType: 'local_process',
-        createdAt: new Date().toISOString(),
-        lastHeartbeatAt: null,
-      })
+      registry.registerHandle(handle)
 
       // GET /api/agents equivalent
-      expect(registry.getAll().length).toBe(1)
-      expect(registry.getById('agent-reg')?.handle.status).toBe('running')
+      expect(registry.listHandles().length).toBe(1)
+      expect(registry.getHandle('agent-reg')?.status).toBe('running')
 
       // POST /api/agents/:id/kill equivalent
-      const killed = registry.killAll()
-      expect(killed).toEqual(['agent-reg'])
+      registry.removeHandle('agent-reg')
       expect(registry.size).toBe(0)
     })
   })
@@ -731,14 +674,13 @@ describe('Phase 1 Acceptance Criteria', () => {
 
     it('EventStreamClient detects disconnect when shim crashes', async () => {
       const agentId = 'agent-ac9'
-      const shimPort = allocPort()
 
       shim = createMockAdapterShim({
-        port: shimPort,
         events: crashSequence(agentId),
         crashAfterEvents: 2,
       })
       await shim.start()
+      const shimPort = shim.getPort()
 
       backend = await bootTestBackend()
 
@@ -854,13 +796,12 @@ describe('Phase 1 Acceptance Criteria', () => {
       clearQuarantine()
 
       const agentId = 'agent-ac10'
-      const shimPort = allocPort()
 
       const shim = createMockAdapterShim({
-        port: shimPort,
         events: malformedEventSequence(agentId),
       })
       await shim.start()
+      const shimPort = shim.getPort()
 
       const eventBus = new EventBus()
 
@@ -1129,13 +1070,12 @@ describe('Phase 1 Acceptance Criteria', () => {
   describe('AC14: providerConfig passthrough', () => {
     it('adapter receives opaque providerConfig from AgentBrief', async () => {
       const agentId = 'agent-ac14'
-      const shimPort = allocPort()
 
       const shim = createMockAdapterShim({
-        port: shimPort,
         events: [],
       })
       await shim.start()
+      const shimPort = shim.getPort()
 
       const brief = makeAgentBrief({
         agentId,
@@ -1385,7 +1325,6 @@ describe('Phase 1 Acceptance Criteria', () => {
 
     it('events traverse the complete pipeline end-to-end', async () => {
       const agentId = 'agent-e2e'
-      const shimPort = allocPort()
 
       // Build a combined sequence without resetting counters
       resetSeqCounter()
@@ -1405,10 +1344,10 @@ describe('Phase 1 Acceptance Criteria', () => {
       ]
 
       shim = createMockAdapterShim({
-        port: shimPort,
         events: combinedEvents,
       })
       await shim.start()
+      const shimPort = shim.getPort()
 
       backend = await bootTestBackend()
 
@@ -1487,13 +1426,12 @@ describe('Phase 1 Acceptance Criteria', () => {
 
     it('resolve decision -> trust delta -> TrustUpdateMessage on WS', async () => {
       const agentId = 'agent-trust-pipe'
-      const shimPort = allocPort()
 
       shim = createMockAdapterShim({
-        port: shimPort,
         events: trustUpdateSequence(agentId),
       })
       await shim.start()
+      const shimPort = shim.getPort()
 
       backend = await bootTestBackend()
       const trustEngine = new TrustEngine()

@@ -1,6 +1,7 @@
 import type { Server } from 'node:http'
 
 import express, { type Express } from 'express'
+import cors from 'cors'
 
 import type { WebSocketHub } from './ws-hub'
 import { createApiRouter, type ApiRouteDeps } from './routes'
@@ -14,6 +15,7 @@ export type AppDeps = ApiRouteDeps
 export function createApp(deps: AppDeps): Express {
   const app = express()
 
+  app.use(cors())
   app.use(express.json())
   app.use('/api', createApiRouter(deps))
 

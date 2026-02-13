@@ -8,7 +8,6 @@ import type { EventFilter } from '../../src/intelligence/knowledge-store'
 import { knowledgeSnapshotSchema } from '../../src/validation/schemas'
 import type { ArtifactEvent, CoherenceEvent, EventEnvelope, StatusEvent } from '../../src/types/events'
 import type { AgentHandle } from '../../src/types/plugin'
-import type { QueuedDecision } from '../../src/intelligence/decision-queue'
 import type { OptionDecisionEvent } from '../../src/types/events'
 
 // ---------------------------------------------------------------------------
@@ -58,7 +57,7 @@ function makeHandle(id: string, status: AgentHandle['status'] = 'running'): Agen
   }
 }
 
-function makePendingDecision(agentId: string, decisionId: string): QueuedDecision {
+function makePendingDecision(agentId: string, decisionId: string): OptionDecisionEvent {
   const event: OptionDecisionEvent = {
     type: 'decision',
     subtype: 'option',
@@ -74,12 +73,7 @@ function makePendingDecision(agentId: string, decisionId: string): QueuedDecisio
     requiresRationale: false
   }
 
-  return {
-    event,
-    status: 'pending',
-    enqueuedAtTick: 0,
-    priority: 30
-  }
+  return event
 }
 
 function makeEventEnvelope(

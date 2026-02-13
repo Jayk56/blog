@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from .artifact_upload import get_artifact_upload_endpoint, rewrite_artifact_uri
+from .codex_runner import CodexRunner
 from .mock_runner import MockRunner
 from .models import (
     AgentBrief,
@@ -26,11 +27,11 @@ from .models import (
 MAX_EVENT_BUFFER = 1000
 
 
-def create_app(*, mock: bool = False) -> FastAPI:
+def create_app(*, mock: bool = False, workspace: str | None = None) -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(title="OpenAI Adapter Shim", version="0.1.0")
 
-    state = AppState(mock=mock)
+    state = AppState(mock=mock, workspace=workspace)
 
     @app.get("/health")
     async def health() -> dict:
@@ -61,7 +62,10 @@ def create_app(*, mock: bool = False) -> FastAPI:
         if state.runner is not None and state.runner.is_running:
             raise HTTPException(status_code=409, detail="Agent already running")
 
-        runner = MockRunner(brief)
+        if state.mock:
+            runner: MockRunner | CodexRunner = MockRunner(brief)
+        else:
+            runner = CodexRunner(brief, workspace=state.workspace)
         state.runner = runner
         runner.start()
 
@@ -92,9 +96,16 @@ def create_app(*, mock: bool = False) -> FastAPI:
 
     @app.post("/resume")
     async def resume(agent_state: SerializedAgentState) -> dict:
-        # In mock mode, we just create a new mock runner from the brief snapshot
         brief = agent_state.brief_snapshot
-        runner = MockRunner(brief)
+        if state.mock:
+            runner: MockRunner | CodexRunner = MockRunner(brief)
+        else:
+            resume_session_id = agent_state.session_id
+            runner = CodexRunner(
+                brief,
+                workspace=state.workspace,
+                resume_session_id=resume_session_id,
+            )
         state.runner = runner
         runner.start()
         await asyncio.sleep(0.05)
@@ -199,9 +210,10 @@ def create_app(*, mock: bool = False) -> FastAPI:
 class AppState:
     """Mutable application state shared across endpoints."""
 
-    def __init__(self, *, mock: bool = False) -> None:
+    def __init__(self, *, mock: bool = False, workspace: str | None = None) -> None:
         self.mock = mock
-        self.runner: MockRunner | None = None
+        self.workspace = workspace
+        self.runner: MockRunner | CodexRunner | None = None
         self.event_buffer: list = []
         self.ws_connected = False
         self.start_time = time.monotonic()

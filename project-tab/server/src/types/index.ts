@@ -1,4 +1,5 @@
 export * from './brief'
+export * from './snapshot'
 export * from './events'
 export * from './messages'
 export * from './plugin'

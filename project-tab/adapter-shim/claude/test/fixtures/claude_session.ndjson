@@ -1,0 +1,11 @@
+{"type":"system","subtype":"init","session_id":"sess-abc-123","tools":["Read","Edit","Bash","Write"],"model":"claude-sonnet-4-5-20250929"}
+{"type":"assistant","content":[{"type":"text","text":"I'll analyze the codebase structure first."}]}
+{"type":"assistant","content":[{"type":"tool_use","id":"tu_01","name":"Read","input":{"file_path":"/workspace/src/main.ts"}}]}
+{"type":"result","content":[{"type":"tool_result","tool_use_id":"tu_01","content":"export function main() { return 42; }"}]}
+{"type":"assistant","content":[{"type":"text","text":"Now I'll implement the changes."},{"type":"tool_use","id":"tu_02","name":"Write","input":{"file_path":"/workspace/src/helper.ts","content":"export function helper() { return true; }"}}]}
+{"type":"result","content":[{"type":"tool_result","tool_use_id":"tu_02","content":"File written successfully"}]}
+{"type":"assistant","content":[{"type":"tool_use","id":"tu_03","name":"Edit","input":{"file_path":"/workspace/src/main.ts","old_string":"return 42","new_string":"return helper()"}}]}
+{"type":"result","content":[{"type":"tool_result","tool_use_id":"tu_03","content":"Edit applied successfully"}]}
+{"type":"assistant","content":[{"type":"tool_use","id":"tu_04","name":"Bash","input":{"command":"npm test"}}]}
+{"type":"result","content":[{"type":"tool_result","tool_use_id":"tu_04","content":"All tests passed"}]}
+{"type":"result","subtype":"success","result":"Implemented helper function and updated main.ts to use it. All tests pass."}

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
 
 import { createApp } from '../../src/app'
+import { listenEphemeral } from '../helpers/listen-ephemeral'
 import { EventBus } from '../../src/bus'
 import { TickService } from '../../src/tick'
 import { TrustEngine } from '../../src/intelligence/trust-engine'
@@ -101,7 +102,6 @@ function createMockPlugin(): AgentPlugin {
 }
 
 let tokenService: TokenService
-let testPort = 9400
 
 function createTestDeps(): ApiRouteDeps {
   const tickService = new TickService({ mode: 'manual' })
@@ -196,10 +196,9 @@ describe('Route: POST /api/token/renew', () => {
   beforeEach(async () => {
     const deps = createTestDeps()
     const app = createApp(deps)
-    const port = testPort++
     server = createServer(app as any)
+    const port = await listenEphemeral(server)
     baseUrl = `http://localhost:${port}`
-    await new Promise<void>((resolve) => server.listen(port, resolve))
   })
 
   afterEach(async () => {

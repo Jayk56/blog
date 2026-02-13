@@ -10,6 +10,7 @@ import type { AgentHandle, AgentPlugin, FrontendMessage, KnowledgeSnapshot, Plug
 import type { ControlMode } from '../../src/types/events'
 import { createApp } from '../../src/app'
 import { createServer, type Server } from 'node:http'
+import { listenEphemeral } from '../helpers/listen-ephemeral'
 
 /** Creates a mock AgentPlugin that records calls. */
 function createMockPlugin(name = 'mock'): AgentPlugin & { calls: Record<string, unknown[][]> } {
@@ -214,20 +215,17 @@ function createTestDeps(): {
   return { deps, mockPlugin, registry, broadcasts }
 }
 
-let testPort = 9300
-
 function createTestApp(deps: ApiRouteDeps) {
   const app = createApp(deps)
-  const port = testPort++
   const server = createServer(app as any)
-  const baseUrl = `http://localhost:${port}`
+  let baseUrl = ''
 
   return {
     server,
-    port,
-    baseUrl,
+    get baseUrl() { return baseUrl },
     async start() {
-      await new Promise<void>((resolve) => server.listen(port, resolve))
+      const port = await listenEphemeral(server)
+      baseUrl = `http://localhost:${port}`
     },
     async close() {
       await new Promise<void>((resolve) => server.close(() => resolve()))

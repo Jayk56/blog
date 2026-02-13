@@ -1,0 +1,19 @@
+{"type": "thread.started", "thread_id": "thread-abc-123"}
+{"type": "turn.started"}
+{"type": "item.completed", "item": {"id": "reason-1", "type": "reasoning", "text": "**Planning approach**"}}
+{"type": "item.completed", "item": {"id": "msg-0", "type": "agent_message", "text": "I'll start by listing the source files."}}
+{"type": "item.started", "item": {"id": "cmd-1", "type": "command_execution", "command": "/bin/zsh -lc 'ls -la src/'", "aggregated_output": "", "exit_code": null, "status": "in_progress"}}
+{"type": "item.completed", "item": {"id": "cmd-1", "type": "command_execution", "command": "/bin/zsh -lc 'ls -la src/'", "aggregated_output": "total 32\ndrwxr-xr-x  4 user staff  128 Jan  1 00:00 .\n-rw-r--r--  1 user staff 1024 Jan  1 00:00 index.ts", "exit_code": 0, "status": "completed"}}
+{"type": "item.started", "item": {"id": "file-1", "type": "file_change", "path": "src/utils.ts"}}
+{"type": "item.completed", "item": {"id": "file-1", "type": "file_change", "path": "src/utils.ts"}}
+{"type": "item.started", "item": {"id": "file-2", "type": "file_change", "path": "src/test_utils.spec.ts"}}
+{"type": "item.completed", "item": {"id": "file-2", "type": "file_change", "path": "src/test_utils.spec.ts"}}
+{"type": "item.started", "item": {"id": "cmd-2", "type": "command_execution", "command": "/bin/zsh -lc 'npm test'", "aggregated_output": "", "exit_code": null, "status": "in_progress"}}
+{"type": "item.completed", "item": {"id": "cmd-2", "type": "command_execution", "command": "/bin/zsh -lc 'npm test'", "aggregated_output": "FAIL src/test_utils.spec.ts\n  1 test failed", "exit_code": 1, "status": "completed"}}
+{"type": "item.completed", "item": {"id": "msg-1", "type": "agent_message", "text": "I fixed the failing test by correcting the import path."}}
+{"type": "item.started", "item": {"id": "mcp-1", "type": "mcp_tool_call", "tool_name": "read_file", "input": {"path": "README.md"}}}
+{"type": "item.completed", "item": {"id": "mcp-1", "type": "mcp_tool_call", "tool_name": "read_file", "output": "# Project README"}}
+{"type": "item.completed", "item": {"id": "todo-1", "type": "todo_list", "items": [{"text": "Write utils", "completed": true}, {"text": "Write tests", "completed": true}, {"text": "Fix CI", "completed": false}]}}
+{"type": "turn.completed", "usage": {"input_tokens": 5000, "output_tokens": 1200}}
+{"type": "turn.started"}
+{"type": "turn.failed", "error": {"message": "Rate limit exceeded"}}

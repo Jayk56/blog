@@ -12,10 +12,27 @@ import { parseBody } from './utils'
 import type { ApiRouteDeps } from './index'
 import type { AgentBrief, SerializedAgentState } from '../types'
 
+type AgentsDeps = Pick<
+  ApiRouteDeps,
+  | 'registry'
+  | 'gateway'
+  | 'defaultPlugin'
+  | 'trustEngine'
+  | 'tickService'
+  | 'knowledgeStore'
+  | 'wsHub'
+  | 'controlMode'
+  | 'contextInjection'
+  | 'decisionQueue'
+  | 'checkpointStore'
+  | 'volumeRecovery'
+  | 'knowledgeStoreImpl'
+>
+
 /**
  * Creates routes for /api/agents endpoints.
  */
-export function createAgentsRouter(deps: ApiRouteDeps): Router {
+export function createAgentsRouter(deps: AgentsDeps): Router {
   const router = Router()
 
   router.get('/', (_req, res) => {
@@ -38,7 +55,7 @@ export function createAgentsRouter(deps: ApiRouteDeps): Router {
       return
     }
 
-    const brief = body.brief as unknown as AgentBrief
+    const brief: AgentBrief = body.brief
     const pluginName = brief.modelPreference ?? deps.defaultPlugin ?? 'openai'
 
     deps.gateway.spawn(brief, pluginName).then(async (handle) => {
@@ -177,8 +194,8 @@ export function createAgentsRouter(deps: ApiRouteDeps): Router {
       return
     }
 
-    plugin.updateBrief(handle, body as unknown as Partial<AgentBrief>).then(() => {
-      const changes = body as unknown as Partial<AgentBrief>
+    const changes: Partial<AgentBrief> = body
+    plugin.updateBrief(handle, changes).then(() => {
       deps.contextInjection?.updateAgentBrief(handle.id, changes)
       deps.contextInjection?.onBriefUpdated(handle.id).catch(() => {
         // Best effort — injection failure doesn't invalidate the brief update
@@ -215,7 +232,7 @@ export function createAgentsRouter(deps: ApiRouteDeps): Router {
       pluginName: body.pluginName,
       sessionId: body.sessionId,
       checkpoint: body.checkpoint as SerializedAgentState['checkpoint'],
-      briefSnapshot: body.briefSnapshot as unknown as AgentBrief,
+      briefSnapshot: body.briefSnapshot,
       conversationSummary: body.conversationSummary,
       pendingDecisionIds: body.pendingDecisionIds,
       lastSequence: body.lastSequence,

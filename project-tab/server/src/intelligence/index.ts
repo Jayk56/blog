@@ -6,13 +6,11 @@ export type { DecisionTimeoutPolicy, DecisionStatus, QueuedDecision } from './de
 
 export { KnowledgeStore } from './knowledge-store'
 
-export { CoherenceMonitor, isEmbeddable } from './coherence-monitor'
+export { CoherenceMonitor } from './coherence-monitor'
 export type { CoherenceMonitorConfig } from './coherence-monitor'
 
-export { cosineSimilarity, MockEmbeddingService, createVectorsWithSimilarity } from './embedding-service'
 export type { EmbeddingService } from './embedding-service'
 
-export { ReviewRateLimiter, MockCoherenceReviewService, buildReviewPrompt } from './coherence-review-service'
 export type {
   CoherenceCandidate,
   CoherenceReviewRequest,

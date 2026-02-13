@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { createServer, type Server } from 'node:http'
+import { listenEphemeral } from '../helpers/listen-ephemeral'
 
 import { EventBus } from '../../src/bus'
 import { TickService } from '../../src/tick'
@@ -15,12 +16,6 @@ import type { RecoveryResult } from '../../src/gateway/volume-recovery'
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-let portCounter = 9400
-
-function allocPort(): number {
-  return portCounter++
-}
-
 function emptySnapshot(): KnowledgeSnapshot {
   return {
     version: 0,
@@ -35,7 +30,6 @@ function emptySnapshot(): KnowledgeSnapshot {
 }
 
 async function bootServer(deps: Partial<ApiRouteDeps> = {}) {
-  const port = allocPort()
   const tickService = new TickService({ mode: 'manual' })
   const eventBus = new EventBus()
   const trustEngine = new TrustEngine()
@@ -100,9 +94,7 @@ async function bootServer(deps: Partial<ApiRouteDeps> = {}) {
   const app = createApp(fullDeps)
   const server = createServer(app as any)
 
-  await new Promise<void>((resolve) => {
-    server.listen(port, () => resolve())
-  })
+  const port = await listenEphemeral(server)
 
   return {
     server,
@@ -122,10 +114,6 @@ async function bootServer(deps: Partial<ApiRouteDeps> = {}) {
 // ── Tests ──────────────────────────────────────────────────────────
 
 describe('POST /api/agents/:id/recover-artifacts', () => {
-  beforeEach(() => {
-    portCounter = 9400 + Math.floor(Math.random() * 50)
-  })
-
   it('returns 503 when volume recovery is not configured', async () => {
     const srv = await bootServer()
 

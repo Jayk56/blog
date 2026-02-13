@@ -11,6 +11,7 @@ import type { ApiRouteDeps, AgentRegistry, AgentGateway, CheckpointStore, Contro
 import type { AgentHandle, AgentPlugin, FrontendMessage, KnowledgeSnapshot, PluginCapabilities } from '../../src/types'
 import type { ControlMode } from '../../src/types/events'
 import { createApp } from '../../src/app'
+import { listenEphemeral } from '../helpers/listen-ephemeral'
 
 function emptySnapshot(): KnowledgeSnapshot {
   return {
@@ -104,20 +105,17 @@ function createTestDeps(): {
   return { deps, knowledgeStoreImpl }
 }
 
-let testPort = 9600
-
 function createTestApp(deps: ApiRouteDeps) {
   const app = createApp(deps)
-  const port = testPort++
   const server = createServer(app as any)
-  const baseUrl = `http://localhost:${port}`
+  let baseUrl = ''
 
   return {
     server,
-    port,
-    baseUrl,
+    get baseUrl() { return baseUrl },
     async start() {
-      await new Promise<void>((resolve) => server.listen(port, resolve))
+      const port = await listenEphemeral(server)
+      baseUrl = `http://localhost:${port}`
     },
     async close() {
       await new Promise<void>((resolve) => server.close(() => resolve()))

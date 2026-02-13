@@ -14,6 +14,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import { WebSocket } from 'ws'
 
+import { listenEphemeral } from '../helpers/listen-ephemeral'
+
 import { EventBus } from '../../src/bus'
 import { EventClassifier } from '../../src/classifier'
 import { TickService } from '../../src/tick'
@@ -40,17 +42,16 @@ import type {
 } from '../../src/types'
 import type { ControlMode } from '../../src/types/events'
 import type {
-  AgentRegistry as IAgentRegistry,
+  AgentRegistry,
   AgentGateway,
   KnowledgeStore as IKnowledgeStore,
   CheckpointStore,
   ControlModeManager,
-} from '../../src/routes'
+} from '../../src/types/service-interfaces'
 import { AgentRegistry as AgentRegistryImpl } from '../../src/registry/agent-registry'
 
 // ── Server config ────────────────────────────────────────────────
 
-const TEST_PORT = 9350
 const SHIM_COMMAND = process.env.SHIM_COMMAND_OVERRIDE ?? 'python'
 const SHIM_ARGS = (process.env.SHIM_ARGS_OVERRIDE ?? '-m,adapter_shim,--mock').split(',')
 const SHIM_CWD = '/Users/jayk/Code/blog/project-tab/adapter-shim/openai'
@@ -108,7 +109,7 @@ interface SmokeTestServer {
   decisionQueue: DecisionQueue
   knowledgeStore: KnowledgeStore
   wsHub: WebSocketHub
-  registry: IAgentRegistry
+  registry: AgentRegistry
   gateway: AgentGateway
   localPlugin: LocalProcessPlugin
   contextInjection: ContextInjectionService
@@ -134,39 +135,7 @@ async function bootServer(): Promise<SmokeTestServer> {
   const decisionQueue = new DecisionQueue()
   decisionQueue.subscribeTo(tickService)
 
-  const agentRegistryImpl = new AgentRegistryImpl()
-  const registry: IAgentRegistry = {
-    getHandle(agentId: string) {
-      return agentRegistryImpl.getById(agentId)?.handle ?? null
-    },
-    listHandles(filter?: { status?: AgentHandle['status']; pluginName?: string }) {
-      const all = agentRegistryImpl.getAll().map((e) => e.handle)
-      if (!filter) return all
-      return all.filter((h) => {
-        if (filter.status && h.status !== filter.status) return false
-        if (filter.pluginName && h.pluginName !== filter.pluginName) return false
-        return true
-      })
-    },
-    registerHandle(handle: AgentHandle) {
-      agentRegistryImpl.register(handle, {
-        agentId: handle.id,
-        transport: { type: 'in_process', eventSink: () => {} },
-        providerType: 'local_process',
-        createdAt: new Date().toISOString(),
-        lastHeartbeatAt: null,
-      })
-    },
-    updateHandle(agentId: string, updates: Partial<AgentHandle>) {
-      const entry = agentRegistryImpl.getById(agentId)
-      if (entry) {
-        agentRegistryImpl.updateHandle(agentId, { ...entry.handle, ...updates })
-      }
-    },
-    removeHandle(agentId: string) {
-      agentRegistryImpl.unregister(agentId)
-    },
-  }
+  const registry = new AgentRegistryImpl()
 
   const knowledgeStore = new KnowledgeStore(':memory:')
   const coherenceMonitor = new CoherenceMonitor()
@@ -176,7 +145,7 @@ async function bootServer(): Promise<SmokeTestServer> {
   coherenceMonitor.subscribeTo(tickService)
 
   const knowledgeStoreInterface: IKnowledgeStore = {
-    async getSnapshot() { return knowledgeStore.getSnapshot(decisionQueue.listPending()) },
+    async getSnapshot() { return knowledgeStore.getSnapshot(decisionQueue.listPending().map((q) => q.event)) },
     async appendEvent() {},
   }
 
@@ -206,7 +175,7 @@ async function bootServer(): Promise<SmokeTestServer> {
     eventBus,
     shimCommand: `${SHIM_CWD}/.venv/bin/python`,
     shimArgs: SHIM_ARGS,
-    backendUrl: `http://localhost:${TEST_PORT}`,
+    backendUrl: 'http://localhost:0', // placeholder, updated after listen
     generateToken,
   })
   plugins.set('openai', localPlugin)
@@ -223,7 +192,7 @@ async function bootServer(): Promise<SmokeTestServer> {
   contextInjection.start()
 
   const wsHub = new WebSocketHub(() => ({
-    snapshot: knowledgeStore.getSnapshot(decisionQueue.listPending()),
+    snapshot: knowledgeStore.getSnapshot(decisionQueue.listPending().map((q) => q.event)),
     activeAgents: registry.listHandles(),
     trustScores: trustEngine.getAllScores(),
     controlMode: currentControlMode,
@@ -323,9 +292,10 @@ async function bootServer(): Promise<SmokeTestServer> {
 
   tickService.start()
 
-  await new Promise<void>((resolve) => {
-    httpServer.listen(TEST_PORT, () => resolve())
-  })
+  const port = await listenEphemeral(httpServer)
+
+  // Update the localPlugin's backendUrl now that we know the port
+  // (The plugin was created with a placeholder URL)
 
   return {
     httpServer,
@@ -339,8 +309,8 @@ async function bootServer(): Promise<SmokeTestServer> {
     gateway,
     localPlugin,
     contextInjection,
-    baseUrl: `http://localhost:${TEST_PORT}`,
-    wsUrl: `ws://localhost:${TEST_PORT}/ws`,
+    baseUrl: `http://localhost:${port}`,
+    wsUrl: `ws://localhost:${port}/ws`,
     async close() {
       tickService.stop()
       contextInjection.stop()

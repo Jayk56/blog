@@ -1,4 +1,5 @@
 import type { TickService } from '../tick'
+import type { DecisionEvent, Resolution } from '../types'
 
 /**
  * Type-safe keys for the trust delta table. Each key corresponds to
@@ -74,6 +75,39 @@ export interface CalibrationLogEntry {
   wouldBeScore: number
   currentScore: number
   timestamp: string
+}
+
+/** Maps a resolution + decision event to a TrustOutcome for the trust engine. */
+export function mapResolutionToTrustOutcome(
+  resolution: Resolution,
+  event: DecisionEvent
+): TrustOutcome | null {
+  if (resolution.type === 'option') {
+    if (event.subtype === 'option' && event.recommendedOptionId) {
+      if (resolution.chosenOptionId === event.recommendedOptionId) {
+        return 'human_approves_recommended_option'
+      }
+      return 'human_picks_non_recommended'
+    }
+    return 'human_approves_recommended_option'
+  }
+
+  if (resolution.type === 'tool_approval') {
+    if (resolution.action === 'approve') {
+      if (resolution.alwaysApprove) {
+        return 'human_approves_always'
+      }
+      return 'human_approves_tool_call'
+    }
+    if (resolution.action === 'reject') {
+      return 'human_rejects_tool_call'
+    }
+    if (resolution.action === 'modify') {
+      return 'human_modifies_tool_args'
+    }
+  }
+
+  return null
 }
 
 /**

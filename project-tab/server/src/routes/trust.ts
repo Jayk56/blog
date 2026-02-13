@@ -2,10 +2,12 @@ import { Router } from 'express'
 
 import type { ApiRouteDeps } from './index'
 
+type TrustDeps = Pick<ApiRouteDeps, 'trustEngine'>
+
 /**
  * Creates routes for /api/trust endpoints.
  */
-export function createTrustRouter(deps: ApiRouteDeps): Router {
+export function createTrustRouter(deps: TrustDeps): Router {
   const router = Router()
 
   router.get('/:agentId', (req, res) => {

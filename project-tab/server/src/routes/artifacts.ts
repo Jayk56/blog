@@ -2,11 +2,13 @@ import { Router } from 'express'
 
 import type { ApiRouteDeps } from './index'
 
+type ArtifactsDeps = Pick<ApiRouteDeps, 'knowledgeStore' | 'knowledgeStoreImpl'>
+
 /**
  * Creates routes for /api/artifacts and /api/coherence endpoints.
  * Also handles POST /api/artifacts for artifact uploads from adapter shims.
  */
-export function createArtifactsRouter(deps: ApiRouteDeps): Router {
+export function createArtifactsRouter(deps: ArtifactsDeps): Router {
   const router = Router()
 
   router.get('/artifacts', async (_req, res) => {

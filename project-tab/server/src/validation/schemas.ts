@@ -1,6 +1,6 @@
 import { z, type ZodError } from 'zod'
 
-import type { AdapterEvent } from '../types'
+import type { AdapterEvent, EscalationPredicate } from '../types'
 
 export const severitySchema = z.enum(['warning', 'low', 'medium', 'high', 'critical'])
 export const blastRadiusSchema = z.enum(['trivial', 'small', 'medium', 'large', 'unknown'])
@@ -226,7 +226,7 @@ const guardrailSpecSchema = z.object({
   action: z.enum(['block', 'warn', 'log'])
 })
 
-const escalationPredicateSchema: z.ZodType<unknown> = z.lazy(() =>
+const escalationPredicateSchema: z.ZodType<EscalationPredicate> = z.lazy(() =>
   z.union([
     z.object({ field: z.literal('confidence'), op: z.enum(['lt', 'gt', 'lte', 'gte']), value: z.number() }),
     z.object({ field: z.literal('blastRadius'), op: z.enum(['eq', 'gte']), value: blastRadiusSchema }),
@@ -500,3 +500,26 @@ export function validateAdapterEvent(
 
   return { ok: true, event: parsed.data as AdapterEvent }
 }
+
+/**
+ * TODO(schema-types): These inferred types should eventually replace
+ * the manual interfaces in `types/events.ts` to eliminate schema drift.
+ */
+export type InferredDecisionOption = z.infer<typeof decisionOptionSchema>
+export type InferredProvenance = z.infer<typeof provenanceSchema>
+export type InferredStatusEvent = z.infer<typeof statusEventSchema>
+export type InferredOptionDecisionEvent = z.infer<typeof optionDecisionEventSchema>
+export type InferredToolApprovalEvent = z.infer<typeof toolApprovalEventSchema>
+export type InferredArtifactEvent = z.infer<typeof artifactEventSchema>
+export type InferredCoherenceEvent = z.infer<typeof coherenceEventSchema>
+export type InferredToolCallEvent = z.infer<typeof toolCallEventSchema>
+export type InferredCompletionEvent = z.infer<typeof completionEventSchema>
+export type InferredErrorEvent = z.infer<typeof errorEventSchema>
+export type InferredDelegationEvent = z.infer<typeof delegationEventSchema>
+export type InferredGuardrailEvent = z.infer<typeof guardrailEventSchema>
+export type InferredLifecycleEvent = z.infer<typeof lifecycleEventSchema>
+export type InferredProgressEvent = z.infer<typeof progressEventSchema>
+export type InferredRawProviderEvent = z.infer<typeof rawProviderEventSchema>
+export type InferredAgentEvent = z.infer<typeof agentEventSchema>
+export type InferredAdapterEvent = z.infer<typeof adapterEventSchema>
+export type InferredEventEnvelope = z.infer<typeof eventEnvelopeSchema>

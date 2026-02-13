@@ -3,12 +3,17 @@ import { Router } from 'express'
 import { resolveDecisionRequestSchema } from '../validation/schemas'
 import { parseBody } from './utils'
 import type { ApiRouteDeps } from './index'
-import type { TrustOutcome } from '../intelligence/trust-engine'
+import { mapResolutionToTrustOutcome } from '../intelligence/trust-engine'
+
+type DecisionsDeps = Pick<
+  ApiRouteDeps,
+  'decisionQueue' | 'trustEngine' | 'tickService' | 'wsHub' | 'registry' | 'gateway'
+>
 
 /**
  * Creates routes for /api/decisions endpoints.
  */
-export function createDecisionsRouter(deps: ApiRouteDeps): Router {
+export function createDecisionsRouter(deps: DecisionsDeps): Router {
   const router = Router()
 
   router.get('/', (_req, res) => {
@@ -81,37 +86,4 @@ export function createDecisionsRouter(deps: ApiRouteDeps): Router {
   })
 
   return router
-}
-
-/** Maps a resolution + decision event to a TrustOutcome for the trust engine. */
-function mapResolutionToTrustOutcome(
-  resolution: import('../types').Resolution,
-  event: import('../types').DecisionEvent
-): TrustOutcome | null {
-  if (resolution.type === 'option') {
-    if (event.subtype === 'option' && event.recommendedOptionId) {
-      if (resolution.chosenOptionId === event.recommendedOptionId) {
-        return 'human_approves_recommended_option'
-      }
-      return 'human_picks_non_recommended'
-    }
-    return 'human_approves_recommended_option'
-  }
-
-  if (resolution.type === 'tool_approval') {
-    if (resolution.action === 'approve') {
-      if (resolution.alwaysApprove) {
-        return 'human_approves_always'
-      }
-      return 'human_approves_tool_call'
-    }
-    if (resolution.action === 'reject') {
-      return 'human_rejects_tool_call'
-    }
-    if (resolution.action === 'modify') {
-      return 'human_modifies_tool_args'
-    }
-  }
-
-  return null
 }

@@ -64,6 +64,7 @@ import type {
   ControlModeManager,
 } from '../../src/routes'
 
+import { listenEphemeral } from '../helpers/listen-ephemeral'
 import { createMockAdapterShim, type MockAdapterShim } from './mock-adapter-shim'
 import {
   makeAgentBrief,
@@ -83,12 +84,6 @@ import {
 } from './fixtures'
 
 // ── Helpers ────────────────────────────────────────────────────────
-
-let portCounter = 9750
-
-function allocPort(): number {
-  return portCounter++
-}
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -162,7 +157,6 @@ function makeArtifactEnvelope(artifact: ArtifactEvent, seqNum: number): EventEnv
 async function bootFullBackend(options: {
   tickMode?: 'manual' | 'wall_clock'
 } = {}) {
-  const port = allocPort()
   const tickService = new TickService({ mode: options.tickMode ?? 'manual' })
   const eventBus = new EventBus()
   const classifier = new EventClassifier()
@@ -176,7 +170,7 @@ async function bootFullBackend(options: {
   coherenceMonitor.setArtifactContentProvider(() => undefined)
 
   const wsHub = new WebSocketHub(() => ({
-    snapshot: knowledgeStore.getSnapshot(decisionQueue.listPending()),
+    snapshot: knowledgeStore.getSnapshot(decisionQueue.listPending().map((q) => q.event)),
     activeAgents: [],
     trustScores: trustEngine.getAllScores(),
     controlMode: 'orchestrator' as const,
@@ -271,9 +265,7 @@ async function bootFullBackend(options: {
 
   tickService.start()
 
-  await new Promise<void>((resolve) => {
-    server.listen(port, () => resolve())
-  })
+  const port = await listenEphemeral(server)
 
   return {
     server,
@@ -305,7 +297,6 @@ describe('Phase 1 Closeout: Crash Detection (Gap 3)', () => {
   let shim: MockAdapterShim
 
   beforeEach(() => {
-    portCounter = 9750 + Math.floor(Math.random() * 50)
     resetSeqCounter()
     clearQuarantine()
   })
@@ -317,14 +308,13 @@ describe('Phase 1 Closeout: Crash Detection (Gap 3)', () => {
 
   it('crash detection: WS disconnect triggers onDisconnect callback', async () => {
     const agentId = 'agent-crash-ws'
-    const shimPort = allocPort()
 
     shim = createMockAdapterShim({
-      port: shimPort,
       events: crashSequence(agentId),
       crashAfterEvents: 2,
     })
     await shim.start()
+    const shimPort = shim.getPort()
 
     backend = await bootFullBackend()
 
@@ -497,19 +487,17 @@ describe('Phase 1 Closeout: Crash Detection (Gap 3)', () => {
 
 describe('Phase 1 Closeout: Artifact Upload Flow (Gap 2)', () => {
   beforeEach(() => {
-    portCounter = 9750 + Math.floor(Math.random() * 50)
     resetSeqCounter()
   })
 
   it('POST /api/artifacts stores content and returns artifact:// URI', async () => {
-    const port = allocPort()
     const knowledgeStore = new KnowledgeStore(':memory:')
 
-    const deps = createMinimalDeps(port, knowledgeStore)
+    const deps = createMinimalDeps(knowledgeStore)
     const app = createApp(deps)
     const server = createServer(app as any)
 
-    await new Promise<void>((resolve) => server.listen(port, () => resolve()))
+    const port = await listenEphemeral(server)
 
     try {
       // Register the artifact first
@@ -589,25 +577,22 @@ describe('Phase 1 Closeout: Artifact Upload Flow (Gap 2)', () => {
 
 describe('Phase 1 Closeout: Quarantine REST API (Gap 1)', () => {
   beforeEach(() => {
-    portCounter = 9750 + Math.floor(Math.random() * 50)
     clearQuarantine()
   })
 
   it('GET /api/quarantine returns quarantined events after malformed event ingestion', async () => {
-    const port = allocPort()
     const knowledgeStore = new KnowledgeStore(':memory:')
-    const deps = createMinimalDeps(port, knowledgeStore)
+    const deps = createMinimalDeps(knowledgeStore)
     const app = createApp(deps)
     const server = createServer(app as any)
 
-    await new Promise<void>((resolve) => server.listen(port, () => resolve()))
+    const port = await listenEphemeral(server)
 
-    const shimPort = allocPort()
     const shim = createMockAdapterShim({
-      port: shimPort,
       events: malformedEventSequence('agent-quarantine'),
     })
     await shim.start()
+    const shimPort = shim.getPort()
 
     // Connect EventStreamClient (which quarantines malformed events)
     const eventBus = new EventBus()
@@ -655,7 +640,6 @@ describe('Phase 1 Closeout: providerConfig Passthrough (Gap 5)', () => {
   let shim: MockAdapterShim
 
   beforeEach(() => {
-    portCounter = 9750 + Math.floor(Math.random() * 50)
     resetSeqCounter()
   })
 
@@ -664,12 +648,11 @@ describe('Phase 1 Closeout: providerConfig Passthrough (Gap 5)', () => {
   })
 
   it('adapter shim receives opaque providerConfig from AgentBrief via POST /spawn', async () => {
-    const shimPort = allocPort()
     shim = createMockAdapterShim({
-      port: shimPort,
       events: [],
     })
     await shim.start()
+    const shimPort = shim.getPort()
 
     const brief = makeAgentBrief({
       agentId: 'agent-provider-cfg',
@@ -698,12 +681,11 @@ describe('Phase 1 Closeout: providerConfig Passthrough (Gap 5)', () => {
   })
 
   it('providerConfig survives full brief -> spawn -> shim roundtrip', async () => {
-    const shimPort = allocPort()
     shim = createMockAdapterShim({
-      port: shimPort,
       events: statusAndToolCallSequence('agent-cfg-rt'),
     })
     await shim.start()
+    const shimPort = shim.getPort()
 
     const providerConfig = {
       model: 'gpt-4.5-turbo',
@@ -892,7 +874,6 @@ describe('Phase 1 Closeout: Layer 0 Coherence via ArtifactEvent (Gap 4)', () => 
   let backend: Awaited<ReturnType<typeof bootFullBackend>>
 
   beforeEach(() => {
-    portCounter = 9750 + Math.floor(Math.random() * 50)
     resetSeqCounter()
   })
 
@@ -994,7 +975,7 @@ describe('Phase 1 Closeout: Event Bus Backpressure (existing AC16)', () => {
 
 // ── Helper: create minimal deps for Express app ──────────────────
 
-function createMinimalDeps(port: number, knowledgeStore: KnowledgeStore) {
+function createMinimalDeps(knowledgeStore: KnowledgeStore) {
   const tickService = new TickService({ mode: 'manual' })
   const eventBus = new EventBus()
   const trustEngine = new TrustEngine()

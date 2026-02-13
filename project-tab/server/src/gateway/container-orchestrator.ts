@@ -1,10 +1,7 @@
 import Docker from 'dockerode'
 import type { ContainerTransport, SandboxBootstrap } from '../types'
 import type { WorkspaceRequirements, WorkspaceMount } from '../types/brief'
-
-/** Port allocation range for container-mapped host ports. */
-const PORT_MIN = 9200
-const PORT_MAX = 9299
+import { pollHealth, PortPool } from './port-pool'
 
 /** Health poll configuration. */
 const HEALTH_POLL_INTERVAL_MS = 500
@@ -46,7 +43,7 @@ export interface ContainerCreateOptions {
  * instead of local child processes.
  */
 export class ContainerOrchestrator {
-  private readonly allocatedPorts = new Set<number>()
+  private readonly portPool = new PortPool(9200, 9299)
   private readonly containers = new Map<string, string>() // agentId -> containerId
   private readonly exitListeners = new Map<
     string,
@@ -63,18 +60,12 @@ export class ContainerOrchestrator {
 
   /** Allocate an unused port from the 9200-9299 pool. */
   allocatePort(): number {
-    for (let port = PORT_MIN; port <= PORT_MAX; port++) {
-      if (!this.allocatedPorts.has(port)) {
-        this.allocatedPorts.add(port)
-        return port
-      }
-    }
-    throw new Error(`No ports available in range ${PORT_MIN}-${PORT_MAX}`)
+    return this.portPool.allocate()
   }
 
   /** Release a port back to the pool. */
   releasePort(port: number): void {
-    this.allocatedPorts.delete(port)
+    this.portPool.release(port)
   }
 
   /**
@@ -131,7 +122,7 @@ export class ContainerOrchestrator {
 
     // Poll /health until ready
     try {
-      await this.pollHealth(port, pollInterval, startupTimeout)
+      await pollHealth(port, pollInterval, startupTimeout, this.fetchFn)
     } catch (err) {
       // Cleanup on health timeout
       try {
@@ -298,31 +289,4 @@ export class ContainerOrchestrator {
       })
   }
 
-  /** Poll GET /health on the given port until a successful response or timeout. */
-  private async pollHealth(
-    port: number,
-    intervalMs: number,
-    timeoutMs: number
-  ): Promise<void> {
-    const deadline = Date.now() + timeoutMs
-    const url = `http://localhost:${port}/health`
-
-    while (Date.now() < deadline) {
-      try {
-        const response = await this.fetchFn(url, {
-          signal: AbortSignal.timeout(intervalMs),
-        })
-        if (response.ok) {
-          return
-        }
-      } catch {
-        // Connection refused, timeout, etc. -- keep polling
-      }
-      await new Promise((resolve) => setTimeout(resolve, intervalMs))
-    }
-
-    throw new Error(
-      `Container on port ${port} did not become healthy within ${timeoutMs}ms`
-    )
-  }
 }

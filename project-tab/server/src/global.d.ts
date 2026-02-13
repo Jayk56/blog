@@ -3,6 +3,8 @@ declare module 'express' {
     body: unknown
     params: Record<string, string>
     query: Record<string, string | string[]>
+    headers: Record<string, string | string[] | undefined>
+    method?: string
     url?: string
   }
 
@@ -11,10 +13,11 @@ declare module 'express' {
     json(body: unknown): this
     setHeader(name: string, value: string | number | readonly string[]): this
     send(body: unknown): this
+    end(body?: unknown): this
   }
 
-  export type NextFunction = () => void
-  export type RequestHandler = (req: Request, res: Response, next?: NextFunction) => void
+  export type NextFunction = (err?: any) => void
+  export type RequestHandler = (req: Request, res: Response, next: NextFunction) => void
 
   export interface Router {
     use(...handlers: RequestHandler[]): this

@@ -67,12 +67,6 @@ import {
 
 // ── Helpers ────────────────────────────────────────────────────────
 
-let portCounter = 9850
-
-function allocPort(): number {
-  return portCounter++
-}
-
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -274,86 +268,59 @@ describe('P2-3: Agent Registry Multi-Agent Fleet', () => {
     const registry = new AgentRegistryImpl()
 
     for (let i = 0; i < 5; i++) {
-      registry.register(
+      registry.registerHandle(
         { id: `agent-${i}`, pluginName: i < 3 ? 'openai' : 'claude', status: 'running', sessionId: `s-${i}` },
-        {
-          agentId: `agent-${i}`,
-          transport: { type: 'in_process', eventSink: () => {} },
-          providerType: 'local_process',
-          createdAt: new Date().toISOString(),
-          lastHeartbeatAt: null,
-        },
       )
     }
 
     expect(registry.size).toBe(5)
-    expect(registry.getAll().length).toBe(5)
+    expect(registry.listHandles().length).toBe(5)
 
     // Filter by plugin
-    const openaiAgents = registry.getAll().filter((e) => e.handle.pluginName === 'openai')
+    const openaiAgents = registry.listHandles({ pluginName: 'openai' })
     expect(openaiAgents.length).toBe(3)
 
-    const claudeAgents = registry.getAll().filter((e) => e.handle.pluginName === 'claude')
+    const claudeAgents = registry.listHandles({ pluginName: 'claude' })
     expect(claudeAgents.length).toBe(2)
   })
 
-  it('getById returns null for non-existent agent', () => {
+  it('getHandle returns null for non-existent agent', () => {
     const registry = new AgentRegistryImpl()
-    expect(registry.getById('nonexistent')).toBeUndefined()
+    expect(registry.getHandle('nonexistent')).toBeNull()
   })
 
   it('updateHandle changes agent status', () => {
     const registry = new AgentRegistryImpl()
-    registry.register(
+    registry.registerHandle(
       { id: 'agent-upd', pluginName: 'openai', status: 'running', sessionId: 's-upd' },
-      {
-        agentId: 'agent-upd',
-        transport: { type: 'in_process', eventSink: () => {} },
-        providerType: 'local_process',
-        createdAt: new Date().toISOString(),
-        lastHeartbeatAt: null,
-      },
     )
 
-    registry.updateHandle('agent-upd', { ...registry.getById('agent-upd')!.handle, status: 'paused' })
-    expect(registry.getById('agent-upd')!.handle.status).toBe('paused')
+    registry.updateHandle('agent-upd', { status: 'paused' })
+    expect(registry.getHandle('agent-upd')!.status).toBe('paused')
   })
 
-  it('unregister removes agent and decrements size', () => {
+  it('removeHandle removes agent and decrements size', () => {
     const registry = new AgentRegistryImpl()
-    registry.register(
+    registry.registerHandle(
       { id: 'agent-unreg', pluginName: 'openai', status: 'running', sessionId: 's-unreg' },
-      {
-        agentId: 'agent-unreg',
-        transport: { type: 'in_process', eventSink: () => {} },
-        providerType: 'local_process',
-        createdAt: new Date().toISOString(),
-        lastHeartbeatAt: null,
-      },
     )
 
-    registry.unregister('agent-unreg')
+    registry.removeHandle('agent-unreg')
     expect(registry.size).toBe(0)
-    expect(registry.getById('agent-unreg')).toBeUndefined()
+    expect(registry.getHandle('agent-unreg')).toBeNull()
   })
 
-  it('killAll removes all agents', () => {
+  it('removeHandle clears all agents when called per id', () => {
     const registry = new AgentRegistryImpl()
     for (let i = 0; i < 3; i++) {
-      registry.register(
+      registry.registerHandle(
         { id: `agent-kill-${i}`, pluginName: 'openai', status: 'running', sessionId: `s-${i}` },
-        {
-          agentId: `agent-kill-${i}`,
-          transport: { type: 'in_process', eventSink: () => {} },
-          providerType: 'local_process',
-          createdAt: new Date().toISOString(),
-          lastHeartbeatAt: null,
-        },
       )
     }
 
-    const killed = registry.killAll()
-    expect(killed).toHaveLength(3)
+    for (const handle of registry.listHandles()) {
+      registry.removeHandle(handle.id)
+    }
     expect(registry.size).toBe(0)
   })
 })
@@ -700,7 +667,6 @@ describe('P2-8: Cross-Provider Integration', () => {
   let shim2: MockAdapterShim
 
   beforeEach(() => {
-    portCounter = 9850 + Math.floor(Math.random() * 50)
     resetSeqCounter()
   })
 
@@ -713,9 +679,6 @@ describe('P2-8: Cross-Provider Integration', () => {
     const agentA = 'agent-cross-a'
     const agentB = 'agent-cross-b'
 
-    const portA = allocPort()
-    const portB = allocPort()
-
     // Build event sequences with explicitly unique sourceEventIds
     // (each fixture function calls resetSeqCounter(), so we use custom overrides)
     const eventsA: MockShimEvent[] = [
@@ -727,11 +690,13 @@ describe('P2-8: Cross-Provider Integration', () => {
       { delayMs: 10, event: makeAdapterEvent({ type: 'status', agentId: agentB, message: 'Working' }, { sourceEventId: 'b-evt-2', sourceSequence: 2 }) },
     ]
 
-    shim1 = createMockAdapterShim({ port: portA, events: eventsA })
+    shim1 = createMockAdapterShim({ events: eventsA })
     await shim1.start()
+    const portA = shim1.getPort()
 
-    shim2 = createMockAdapterShim({ port: portB, events: eventsB })
+    shim2 = createMockAdapterShim({ events: eventsB })
     await shim2.start()
+    const portB = shim2.getPort()
 
     // Shared event bus
     const eventBus = new EventBus()
@@ -790,9 +755,6 @@ describe('P2-8: Cross-Provider Integration', () => {
     const agentA = 'agent-cross-dec-a'
     const agentB = 'agent-cross-dec-b'
 
-    const portA = allocPort()
-    const portB = allocPort()
-
     // Build decision sequences with unique sourceEventIds per agent
     const decEventsA: MockShimEvent[] = [
       { delayMs: 10, event: makeAdapterEvent({ type: 'status', agentId: agentA, message: 'Starting' }, { sourceEventId: 'dec-a-evt-1', sourceSequence: 1 }) },
@@ -817,11 +779,13 @@ describe('P2-8: Cross-Provider Integration', () => {
       },
     ]
 
-    shim1 = createMockAdapterShim({ port: portA, events: decEventsA })
+    shim1 = createMockAdapterShim({ events: decEventsA })
     await shim1.start()
+    const decPortA = shim1.getPort()
 
-    shim2 = createMockAdapterShim({ port: portB, events: decEventsB })
+    shim2 = createMockAdapterShim({ events: decEventsB })
     await shim2.start()
+    const decPortB = shim2.getPort()
 
     const eventBus = new EventBus()
     const decisionQueue = new DecisionQueue()
@@ -834,26 +798,26 @@ describe('P2-8: Cross-Provider Integration', () => {
     })
 
     const streamA = new EventStreamClient({
-      url: `ws://localhost:${portA}/events`,
+      url: `ws://localhost:${decPortA}/events`,
       agentId: agentA,
       eventBus,
     })
     streamA.connect()
 
     const streamB = new EventStreamClient({
-      url: `ws://localhost:${portB}/events`,
+      url: `ws://localhost:${decPortB}/events`,
       agentId: agentB,
       eventBus,
     })
     streamB.connect()
 
     // Spawn both
-    await fetch(`http://localhost:${portA}/spawn`, {
+    await fetch(`http://localhost:${decPortA}/spawn`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ brief: makeAgentBrief({ agentId: agentA }) }),
     })
-    await fetch(`http://localhost:${portB}/spawn`, {
+    await fetch(`http://localhost:${decPortB}/spawn`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ brief: makeAgentBrief({ agentId: agentB }) }),
@@ -980,37 +944,35 @@ describe('P2-8: Cross-Provider Integration', () => {
   it('killing one agent does not affect the other', async () => {
     const agentA = 'agent-kill-a'
     const agentB = 'agent-kill-b'
-    const portA = allocPort()
-    const portB = allocPort()
 
     resetSeqCounter()
     shim1 = createMockAdapterShim({
-      port: portA,
       events: statusAndToolCallSequence(agentA),
     })
     await shim1.start()
+    const killPortA = shim1.getPort()
 
     resetSeqCounter()
     shim2 = createMockAdapterShim({
-      port: portB,
       events: statusAndToolCallSequence(agentB),
     })
     await shim2.start()
+    const killPortB = shim2.getPort()
 
     // Spawn both
-    await fetch(`http://localhost:${portA}/spawn`, {
+    await fetch(`http://localhost:${killPortA}/spawn`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ brief: makeAgentBrief({ agentId: agentA }) }),
     })
-    await fetch(`http://localhost:${portB}/spawn`, {
+    await fetch(`http://localhost:${killPortB}/spawn`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ brief: makeAgentBrief({ agentId: agentB }) }),
     })
 
     // Kill agent A
-    const killRes = await fetch(`http://localhost:${portA}/kill`, {
+    const killRes = await fetch(`http://localhost:${killPortA}/kill`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -1018,7 +980,7 @@ describe('P2-8: Cross-Provider Integration', () => {
     expect(killRes.status).toBe(200)
 
     // Agent B should still be healthy
-    const healthRes = await fetch(`http://localhost:${portB}/health`)
+    const healthRes = await fetch(`http://localhost:${killPortB}/health`)
     expect(healthRes.status).toBe(200)
     const body = await healthRes.json() as any
     expect(body.status).toBe('healthy')

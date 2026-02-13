@@ -7,9 +7,17 @@ import type {
   ArtifactSummary,
   AgentSummary
 } from '../types/brief'
-import type { ArtifactEvent, CoherenceEvent, EventEnvelope, AgentEvent } from '../types/events'
+import type {
+  ArtifactEvent,
+  CoherenceEvent,
+  EventEnvelope,
+  AgentEvent,
+  DecisionEvent,
+  OptionDecisionEvent,
+  ToolApprovalEvent
+} from '../types/events'
 import type { AgentHandle, SerializedAgentState } from '../types/plugin'
-import type { QueuedDecision } from './decision-queue'
+import type { StoredCheckpoint } from '../types/service-interfaces'
 
 /** Thrown when an optimistic concurrency check fails. */
 export class ConflictError extends Error {
@@ -636,7 +644,7 @@ export class KnowledgeStore {
    * Accepts pending decisions from the DecisionQueue as external input
    * (the KnowledgeStore does not own decisions).
    */
-  getSnapshot(pendingDecisions?: QueuedDecision[]): KnowledgeSnapshot {
+  getSnapshot(pendingDecisions?: DecisionEvent[]): KnowledgeSnapshot {
     const workstreamSummaries = this.buildWorkstreamSummaries(pendingDecisions)
     const decisionSummaries = this.buildDecisionSummaries(pendingDecisions)
     const coherenceSummaries = this.buildCoherenceSummaries()
@@ -667,7 +675,7 @@ export class KnowledgeStore {
   // Private: snapshot helpers
   // ---------------------------------------------------------------------------
 
-  private buildWorkstreamSummaries(pendingDecisions?: QueuedDecision[]): WorkstreamSummary[] {
+  private buildWorkstreamSummaries(pendingDecisions?: DecisionEvent[]): WorkstreamSummary[] {
     const wsRows = this.db.prepare('SELECT * FROM workstreams').all() as WorkstreamRow[]
     const agentRows = this.db.prepare('SELECT * FROM agents').all() as AgentRow[]
 
@@ -686,7 +694,7 @@ export class KnowledgeStore {
       let pendingDecisionCount = 0
       if (pendingDecisions) {
         for (const d of pendingDecisions) {
-          const agentRow = agentRows.find((a) => a.agent_id === d.event.agentId)
+          const agentRow = agentRows.find((a) => a.agent_id === d.agentId)
           if (agentRow?.workstream === ws.id) pendingDecisionCount++
         }
       }
@@ -703,20 +711,20 @@ export class KnowledgeStore {
     })
   }
 
-  private buildDecisionSummaries(pendingDecisions?: QueuedDecision[]): DecisionSummary[] {
+  private buildDecisionSummaries(pendingDecisions?: DecisionEvent[]): DecisionSummary[] {
     if (!pendingDecisions) return []
 
     return pendingDecisions.map((d) => {
       const base: DecisionSummary = {
-        id: d.event.decisionId,
-        title: d.event.subtype === 'option' ? (d.event as any).title : `Tool: ${(d.event as any).toolName}`,
-        severity: d.event.subtype === 'option' ? (d.event as any).severity : ((d.event as any).severity ?? 'medium'),
-        agentId: d.event.agentId,
-        subtype: d.event.subtype,
+        id: d.decisionId,
+        title: d.subtype === 'option' ? (d as any).title : `Tool: ${(d as any).toolName}`,
+        severity: d.subtype === 'option' ? (d as any).severity : ((d as any).severity ?? 'medium'),
+        agentId: d.agentId,
+        subtype: d.subtype,
       }
 
-      if (d.event.subtype === 'option') {
-        const optEvent = d.event as import('../types/events').OptionDecisionEvent
+      if (d.subtype === 'option') {
+        const optEvent = d as OptionDecisionEvent
         base.options = optEvent.options
         base.recommendedOptionId = optEvent.recommendedOptionId
         base.confidence = optEvent.confidence
@@ -726,7 +734,7 @@ export class KnowledgeStore {
         base.summary = optEvent.summary
         base.dueByTick = optEvent.dueByTick ?? null
       } else {
-        const toolEvent = d.event as import('../types/events').ToolApprovalEvent
+        const toolEvent = d as ToolApprovalEvent
         base.toolName = toolEvent.toolName
         base.confidence = toolEvent.confidence
         base.blastRadius = toolEvent.blastRadius
@@ -927,14 +935,5 @@ interface CheckpointRow {
   created_at: string
 }
 
-/** A stored checkpoint with its database metadata. */
-export interface StoredCheckpoint {
-  id: number
-  agentId: string
-  sessionId: string
-  serializedBy: SerializedAgentState['serializedBy']
-  decisionId?: string
-  state: SerializedAgentState
-  estimatedSizeBytes: number
-  createdAt: string
-}
+// Re-export StoredCheckpoint from shared types for backwards compatibility.
+export type { StoredCheckpoint } from '../types/service-interfaces'

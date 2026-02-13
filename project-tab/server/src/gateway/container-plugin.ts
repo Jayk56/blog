@@ -15,13 +15,14 @@ import {
   ContainerOrchestrator,
   type ContainerCreateResult,
 } from './container-orchestrator'
-import { AdapterHttpError } from './local-http-plugin'
+import { AdapterHttpClient, AdapterHttpError } from './adapter-http-client'
 import type { MCPProvisioner } from './mcp-provisioner'
 
 /** Tracked container info per agent. */
 interface ContainerRecord {
   result: ContainerCreateResult
   transport: ContainerTransport
+  client: AdapterHttpClient
 }
 
 /** Options for creating a ContainerPlugin. */
@@ -58,7 +59,7 @@ export class ContainerPlugin implements AgentPlugin {
   private readonly image: string
   private readonly backendUrl: string
   private readonly generateToken: ContainerPluginOptions['generateToken']
-  private readonly fetchFn: typeof globalThis.fetch
+  private readonly clientFactory: (rpcEndpoint: string) => AdapterHttpClient
   private readonly mcpProvisioner: MCPProvisioner | null
   private readonly agents = new Map<string, ContainerRecord>()
 
@@ -70,7 +71,9 @@ export class ContainerPlugin implements AgentPlugin {
     this.image = options.image
     this.backendUrl = options.backendUrl
     this.generateToken = options.generateToken
-    this.fetchFn = options.fetchFn ?? globalThis.fetch
+    const fetchFn = options.fetchFn ?? globalThis.fetch
+    this.clientFactory = (rpcEndpoint: string) =>
+      new AdapterHttpClient(rpcEndpoint, fetchFn)
     this.mcpProvisioner = options.mcpProvisioner ?? null
   }
 
@@ -110,31 +113,24 @@ export class ContainerPlugin implements AgentPlugin {
     const record: ContainerRecord = {
       result,
       transport: result.transport,
+      client: this.clientFactory(result.transport.rpcEndpoint),
     }
     this.agents.set(agentId, record)
 
     // POST /spawn to the container's adapter shim
-    return this.post<AgentHandle>(record.transport.rpcEndpoint, '/spawn', brief)
+    return record.client.post<AgentHandle>('/spawn', brief)
   }
 
   /** POST /pause to the container's adapter shim. */
   async pause(handle: AgentHandle): Promise<SerializedAgentState> {
     const record = this.getRecord(handle.id)
-    return this.post<SerializedAgentState>(
-      record.transport.rpcEndpoint,
-      '/pause',
-      handle
-    )
+    return record.client.post<SerializedAgentState>('/pause', handle)
   }
 
   /** POST /resume to the container's adapter shim. */
   async resume(state: SerializedAgentState): Promise<AgentHandle> {
     const record = this.getRecord(state.agentId)
-    return this.post<AgentHandle>(
-      record.transport.rpcEndpoint,
-      '/resume',
-      state
-    )
+    return record.client.post<AgentHandle>('/resume', state)
   }
 
   /** POST /kill to the container, then destroy the container. */
@@ -146,12 +142,14 @@ export class ContainerPlugin implements AgentPlugin {
 
     let response: KillResponse
     try {
-      response = await this.post<KillResponse>(
-        record.transport.rpcEndpoint,
+      response = await record.client.post<KillResponse>(
         '/kill',
         options ?? { grace: true }
       )
-    } catch {
+    } catch (error) {
+      if (error instanceof AdapterHttpError) {
+        // Shim is reachable but returned an HTTP error: treat as unclean shutdown.
+      }
       // If the shim is already dead, synthesize a response
       response = { artifactsExtracted: 0, cleanShutdown: false }
     }
@@ -170,7 +168,7 @@ export class ContainerPlugin implements AgentPlugin {
     resolution: Resolution
   ): Promise<void> {
     const record = this.getRecord(handle.id)
-    await this.post<void>(record.transport.rpcEndpoint, '/resolve', {
+    await record.client.post<void>('/resolve', {
       handle,
       decisionId,
       resolution,
@@ -183,11 +181,7 @@ export class ContainerPlugin implements AgentPlugin {
     injection: ContextInjection
   ): Promise<void> {
     const record = this.getRecord(_handle.id)
-    await this.post<void>(
-      record.transport.rpcEndpoint,
-      '/inject-context',
-      injection
-    )
+    await record.client.post<void>('/inject-context', injection)
   }
 
   /** POST /update-brief to the container. */
@@ -196,7 +190,7 @@ export class ContainerPlugin implements AgentPlugin {
     changes: Partial<AgentBrief>
   ): Promise<void> {
     const record = this.getRecord(handle.id)
-    await this.post<void>(record.transport.rpcEndpoint, '/update-brief', {
+    await record.client.post<void>('/update-brief', {
       handle,
       changes,
     })
@@ -208,11 +202,10 @@ export class ContainerPlugin implements AgentPlugin {
     decisionId: string
   ): Promise<SerializedAgentState> {
     const record = this.getRecord(handle.id)
-    return this.post<SerializedAgentState>(
-      record.transport.rpcEndpoint,
-      '/checkpoint',
-      { handle, decisionId }
-    )
+    return record.client.post<SerializedAgentState>('/checkpoint', {
+      handle,
+      decisionId,
+    })
   }
 
   /** Get the transport for an active agent (used by gateway for WS connection). */
@@ -234,32 +227,5 @@ export class ContainerPlugin implements AgentPlugin {
       throw new Error(`No container found for agent ${agentId}`)
     }
     return record
-  }
-
-  /** Make a POST request to the adapter shim in the container. */
-  private async post<T>(
-    rpcEndpoint: string,
-    endpoint: string,
-    body: unknown
-  ): Promise<T> {
-    const url = `${rpcEndpoint}${endpoint}`
-
-    const response = await this.fetchFn(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-
-    if (!response.ok) {
-      const text = await response.text()
-      throw new AdapterHttpError(endpoint, response.status, text)
-    }
-
-    const text = await response.text()
-    if (!text) {
-      return undefined as T
-    }
-
-    return JSON.parse(text) as T
   }
 }

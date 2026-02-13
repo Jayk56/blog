@@ -3,6 +3,8 @@ import { createServer, type Server } from 'node:http'
 import { EventBus } from './bus'
 import { EventClassifier } from './classifier'
 import { createApp, attachWebSocketUpgrade } from './app'
+import { wireEventHandlers } from './event-handlers'
+import { runStartupVolumeRecovery, wireDockerPlugin } from './startup'
 import { TickService } from './tick'
 import { TrustEngine } from './intelligence/trust-engine'
 import { DecisionQueue } from './intelligence/decision-queue'
@@ -13,13 +15,13 @@ import { MockCoherenceReviewService } from './intelligence/coherence-review-serv
 import { ContextInjectionService } from './intelligence/context-injection-service'
 import { ChildProcessManager } from './gateway/child-process-manager'
 import { LocalProcessPlugin } from './gateway/local-process-plugin'
+import { AuthService } from './auth'
 import { TokenService } from './gateway/token-service'
-import type { AgentHandle, AgentPlugin, KnowledgeSnapshot } from './types'
+import type { AgentPlugin, KnowledgeSnapshot } from './types'
 import type { ControlMode } from './types/events'
-import type { AgentRegistry as IAgentRegistry, AgentGateway, KnowledgeStore, CheckpointStore, ControlModeManager } from './routes'
+import type { AgentRegistry, AgentGateway, KnowledgeStore, CheckpointStore, ControlModeManager } from './types/service-interfaces'
 import { AgentRegistry as AgentRegistryImpl } from './registry/agent-registry'
 import { WebSocketHub } from './ws-hub'
-import type { VolumeRecoveryService } from './gateway/volume-recovery'
 
 // ── Environment configuration ─────────────────────────────────────────────
 
@@ -35,6 +37,10 @@ const shimCommand = process.env.SHIM_COMMAND ?? 'python'
 const shimArgs = (process.env.SHIM_ARGS ?? '-m,adapter_shim,--mock').split(',')
 const enableLayer2 = process.env.ENABLE_LAYER2 === 'true'
 const tokenTtlMs = Number(process.env.TOKEN_TTL_MS ?? 3_600_000)
+const apiAuthEnabled = process.env.API_AUTH_ENABLED === 'true'
+const apiAuthTtlMs = Number(process.env.API_AUTH_TTL_MS ?? 8 * 60 * 60 * 1000)
+const apiAuthIssuer = process.env.API_AUTH_ISSUER ?? 'project-tab-api'
+const apiAuthSecret = process.env.API_AUTH_SECRET
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────
 
@@ -46,6 +52,13 @@ async function bootstrap(): Promise<void> {
 
   // Token service
   const tokenService = new TokenService({ defaultTtlMs: tokenTtlMs })
+  const userAuthService = apiAuthEnabled
+    ? new AuthService({
+      secret: apiAuthSecret ? new TextEncoder().encode(apiAuthSecret) : undefined,
+      defaultTtlMs: apiAuthTtlMs,
+      issuer: apiAuthIssuer,
+    })
+    : undefined
 
   async function generateToken(agentId: string): Promise<{ token: string; expiresAt: string }> {
     const issued = await tokenService.issueToken(agentId)
@@ -60,41 +73,7 @@ async function bootstrap(): Promise<void> {
   decisionQueue.subscribeTo(tickService)
 
   // Agent registry
-  const agentRegistryImpl = new AgentRegistryImpl()
-
-  const registry: IAgentRegistry = {
-    getHandle(agentId: string): AgentHandle | null {
-      const entry = agentRegistryImpl.getById(agentId)
-      return entry?.handle ?? null
-    },
-    listHandles(filter?: { status?: AgentHandle['status']; pluginName?: string }): AgentHandle[] {
-      const all = agentRegistryImpl.getAll().map((e) => e.handle)
-      if (!filter) return all
-      return all.filter((h) => {
-        if (filter.status && h.status !== filter.status) return false
-        if (filter.pluginName && h.pluginName !== filter.pluginName) return false
-        return true
-      })
-    },
-    registerHandle(handle: AgentHandle): void {
-      agentRegistryImpl.register(handle, {
-        agentId: handle.id,
-        transport: { type: 'in_process', eventSink: () => {} },
-        providerType: 'local_process',
-        createdAt: new Date().toISOString(),
-        lastHeartbeatAt: null
-      })
-    },
-    updateHandle(agentId: string, updates: Partial<AgentHandle>): void {
-      const entry = agentRegistryImpl.getById(agentId)
-      if (entry) {
-        agentRegistryImpl.updateHandle(agentId, { ...entry.handle, ...updates })
-      }
-    },
-    removeHandle(agentId: string): void {
-      agentRegistryImpl.unregister(agentId)
-    }
-  }
+  const registry = new AgentRegistryImpl()
 
   // Knowledge store and coherence monitor
   const knowledgeStoreImpl = new KnowledgeStoreImpl(dbPath)
@@ -112,8 +91,8 @@ async function bootstrap(): Promise<void> {
   coherenceMonitor.subscribeTo(tickService)
 
   const knowledgeStore: KnowledgeStore = {
-    async getSnapshot(_workstream?: string): Promise<KnowledgeSnapshot> {
-      return knowledgeStoreImpl.getSnapshot(decisionQueue.listPending())
+    async getSnapshot(): Promise<KnowledgeSnapshot> {
+      return knowledgeStoreImpl.getSnapshot(decisionQueue.listPending().map((q) => q.event))
     },
     async appendEvent(): Promise<void> {
       // Events are delivered via EventBus
@@ -164,7 +143,14 @@ async function bootstrap(): Promise<void> {
   console.log(`[plugin] registered "openai" (local process: ${shimCommand} ${shimArgs.join(' ')})`)
 
   // Docker container plugin (conditional)
-  const { volumeRecovery, docker: dockerClient } = await wireDockerPlugin(plugins, backendUrl, generateToken, eventBus, knowledgeStoreImpl)
+  const { volumeRecovery, docker: dockerClient } = await wireDockerPlugin({
+    dockerEnabled: dockerEnabled as 'auto' | 'true' | 'false',
+    dockerImage,
+    plugins,
+    backendUrl,
+    generateToken,
+    knowledgeStoreImpl,
+  })
 
   // ── Control mode ────────────────────────────────────────────────────
 
@@ -184,7 +170,7 @@ async function bootstrap(): Promise<void> {
   // ── WebSocket hub ───────────────────────────────────────────────────
 
   const wsHub = new WebSocketHub(() => ({
-    snapshot: knowledgeStoreImpl.getSnapshot(decisionQueue.listPending()),
+    snapshot: knowledgeStoreImpl.getSnapshot(decisionQueue.listPending().map((q) => q.event)),
     activeAgents: registry.listHandles(),
     trustScores: trustEngine.getAllScores(),
     controlMode: currentControlMode
@@ -204,6 +190,7 @@ async function bootstrap(): Promise<void> {
     gateway,
     controlMode,
     tokenService,
+    userAuthService,
     contextInjection,
     defaultPlugin,
     volumeRecovery: volumeRecovery ? {
@@ -219,144 +206,18 @@ async function bootstrap(): Promise<void> {
 
   // ── Event bus subscriptions ─────────────────────────────────────────
 
-  // Classifier + WS fan-out
-  eventBus.subscribe({}, (envelope) => {
-    const classified = classifier.classify(envelope)
-    wsHub.publishClassifiedEvent(classified)
-  })
-
-  // Decision queue + auto-checkpoint
-  eventBus.subscribe({ eventType: 'decision' }, (envelope) => {
-    if (envelope.event.type === 'decision') {
-      decisionQueue.enqueue(envelope.event, tickService.currentTick())
-
-      const agentId = envelope.event.agentId
-      const decisionId = envelope.event.decisionId
-
-      registry.updateHandle(agentId, { status: 'waiting_on_human' })
-
-      const handle = registry.getHandle(agentId)
-      if (handle) {
-        const plugin = gateway.getPlugin(handle.pluginName)
-        if (plugin) {
-          plugin.requestCheckpoint(handle, decisionId).then((state) => {
-            checkpointStore.storeCheckpoint(state, decisionId)
-            // eslint-disable-next-line no-console
-            console.log(`[checkpoint] stored decision checkpoint for agent ${agentId}, decision ${decisionId}`)
-          }).catch((err: Error) => {
-            // eslint-disable-next-line no-console
-            console.error(`[checkpoint] failed to checkpoint agent ${agentId} on decision ${decisionId}:`, err.message)
-          })
-        }
-      }
-    }
-  })
-
-  // Artifact storage + coherence check
-  eventBus.subscribe({ eventType: 'artifact' }, (envelope) => {
-    if (envelope.event.type === 'artifact') {
-      knowledgeStoreImpl.storeArtifact(envelope.event)
-
-      const issue = coherenceMonitor.processArtifact(envelope.event)
-      if (issue) {
-        knowledgeStoreImpl.storeCoherenceIssue(issue)
-
-        const coherenceEnvelope = {
-          sourceEventId: `coherence-${issue.issueId}`,
-          sourceSequence: -1,
-          sourceOccurredAt: new Date().toISOString(),
-          runId: envelope.runId,
-          ingestedAt: new Date().toISOString(),
-          event: issue
-        }
-        const classified = classifier.classify(coherenceEnvelope)
-        wsHub.publishClassifiedEvent(classified)
-      }
-    }
-  })
-
-  // Lifecycle tracking
-  eventBus.subscribe({ eventType: 'lifecycle' }, (envelope) => {
-    if (envelope.event.type === 'lifecycle') {
-      const agentId = envelope.event.agentId
-      const action = envelope.event.action
-      if (action === 'started') {
-        const handle = registry.getHandle(agentId)
-        if (handle) {
-          knowledgeStoreImpl.registerAgent(handle, {
-            role: 'agent',
-            workstream: '',
-            pluginName: handle.pluginName,
-          })
-        } else {
-          knowledgeStoreImpl.registerAgent(
-            { id: agentId, pluginName: 'unknown', status: 'running', sessionId: '' },
-            { role: 'agent', workstream: '', pluginName: 'unknown' }
-          )
-        }
-      } else if (action === 'paused') {
-        knowledgeStoreImpl.updateAgentStatus(agentId, 'paused')
-      } else if (action === 'resumed') {
-        knowledgeStoreImpl.updateAgentStatus(agentId, 'running')
-      } else if (action === 'killed' || action === 'crashed') {
-        knowledgeStoreImpl.removeAgent(agentId)
-      }
-    }
-  })
-
-  // Trust tracking: completion events
-  eventBus.subscribe({ eventType: 'completion' }, (envelope) => {
-    if (envelope.event.type === 'completion') {
-      const agentId = envelope.event.agentId
-      const outcome = envelope.event.outcome
-
-      let trustOutcome: import('./intelligence/trust-engine').TrustOutcome | null = null
-      if (outcome === 'success') {
-        trustOutcome = 'task_completed_clean'
-      } else if (outcome === 'partial') {
-        trustOutcome = 'task_completed_partial'
-      } else if (outcome === 'abandoned' || outcome === 'max_turns') {
-        trustOutcome = 'task_abandoned_or_max_turns'
-      }
-
-      if (trustOutcome) {
-        const previousScore = trustEngine.getScore(agentId) ?? 50
-        trustEngine.applyOutcome(agentId, trustOutcome, tickService.currentTick())
-        const newScore = trustEngine.getScore(agentId) ?? 50
-
-        if (previousScore !== newScore) {
-          wsHub.broadcast({
-            type: 'trust_update',
-            agentId,
-            previousScore,
-            newScore,
-            delta: newScore - previousScore,
-            reason: trustOutcome
-          })
-        }
-      }
-    }
-  })
-
-  // Trust tracking: error events
-  eventBus.subscribe({ eventType: 'error' }, (envelope) => {
-    if (envelope.event.type === 'error' && envelope.event.severity !== 'warning') {
-      const agentId = envelope.event.agentId
-      const previousScore = trustEngine.getScore(agentId) ?? 50
-      trustEngine.applyOutcome(agentId, 'error_event', tickService.currentTick())
-      const newScore = trustEngine.getScore(agentId) ?? 50
-
-      if (previousScore !== newScore) {
-        wsHub.broadcast({
-          type: 'trust_update',
-          agentId,
-          previousScore,
-          newScore,
-          delta: newScore - previousScore,
-          reason: 'error_event'
-        })
-      }
-    }
+  wireEventHandlers({
+    eventBus,
+    knowledgeStore: knowledgeStoreImpl,
+    classifier,
+    wsHub,
+    decisionQueue,
+    tickService,
+    registry,
+    gateway,
+    checkpointStore,
+    coherenceMonitor,
+    trustEngine,
   })
 
   // ── Start ───────────────────────────────────────────────────────────
@@ -377,7 +238,12 @@ async function bootstrap(): Promise<void> {
 
   if (volumeRecovery && dockerClient) {
     // Run asynchronously — don't block server startup
-    runStartupVolumeRecovery(volumeRecovery, dockerClient, knowledgeStoreImpl, registry).catch((err) => {
+    runStartupVolumeRecovery({
+      volumeRecovery,
+      docker: dockerClient,
+      knowledgeStoreImpl,
+      registry,
+    }).catch((err) => {
       // eslint-disable-next-line no-console
       console.error('[volume-recovery] startup scan error:', err instanceof Error ? err.message : String(err))
     })
@@ -388,158 +254,6 @@ async function bootstrap(): Promise<void> {
   setupShutdown(server, tickService, contextInjection, openaiPlugin, knowledgeStoreImpl, registry, gateway)
 }
 
-/** Result from wireDockerPlugin — exposes volume recovery if Docker is available. */
-interface DockerWiringResult {
-  volumeRecovery: VolumeRecoveryService | null
-  docker: import('dockerode') | null
-}
-
-// ── Docker plugin wiring ──────────────────────────────────────────────────
-
-async function wireDockerPlugin(
-  plugins: Map<string, AgentPlugin>,
-  backendUrl: string,
-  generateToken: (agentId: string) => Promise<{ token: string; expiresAt: string }>,
-  _eventBus: EventBus,
-  knowledgeStoreImpl: KnowledgeStoreImpl,
-): Promise<DockerWiringResult> {
-  if (dockerEnabled === 'false') {
-    // eslint-disable-next-line no-console
-    console.log('[plugin] Docker disabled via DOCKER_ENABLED=false')
-    return { volumeRecovery: null, docker: null }
-  }
-
-  try {
-    const { default: Docker } = await import('dockerode')
-    const docker = new Docker()
-
-    // Probe Docker connectivity
-    await docker.ping()
-
-    const { ContainerOrchestrator } = await import('./gateway/container-orchestrator')
-    const { ContainerPlugin } = await import('./gateway/container-plugin')
-    const { createDefaultProvisioner } = await import('./gateway/mcp-provisioner')
-    const { VolumeRecoveryService } = await import('./gateway/volume-recovery')
-
-    const orchestrator = new ContainerOrchestrator(docker)
-    const mcpProvisioner = createDefaultProvisioner()
-
-    const claudePlugin = new ContainerPlugin({
-      name: 'claude',
-      version: '1.0.0',
-      capabilities: {
-        supportsPause: false,
-        supportsResume: true,
-        supportsKill: true,
-        supportsHotBriefUpdate: true,
-      },
-      orchestrator,
-      image: dockerImage,
-      backendUrl,
-      generateToken,
-      mcpProvisioner,
-    })
-
-    plugins.set('claude', claudePlugin)
-    // eslint-disable-next-line no-console
-    console.log(`[plugin] registered "claude" (Docker container: ${dockerImage})`)
-
-    // Wire up volume recovery service for artifact recovery on unclean teardown
-    const volumeRecovery = new VolumeRecoveryService({
-      docker,
-      reupload: async (agentId, artifactId, _sourcePath, content) => {
-        knowledgeStoreImpl.storeArtifactContent(agentId, artifactId, content.toString('utf-8'))
-      },
-    })
-    // eslint-disable-next-line no-console
-    console.log('[plugin] VolumeRecoveryService wired for Docker volume recovery')
-
-    return { volumeRecovery, docker }
-  } catch (err) {
-    if (dockerEnabled === 'true') {
-      throw new Error(`DOCKER_ENABLED=true but Docker is unavailable: ${err instanceof Error ? err.message : String(err)}`)
-    }
-    // auto mode: Docker not available, skip silently
-    // eslint-disable-next-line no-console
-    console.log(`[plugin] Docker not available, skipping container plugin (${err instanceof Error ? err.message : 'unknown error'})`)
-    return { volumeRecovery: null, docker: null }
-  }
-}
-
-/**
- * Run startup volume recovery scan. Lists Docker volumes matching
- * the `project-tab-workspace-*` naming convention and runs recovery
- * for any that don't correspond to currently running agents.
- */
-async function runStartupVolumeRecovery(
-  volumeRecovery: VolumeRecoveryService,
-  docker: import('dockerode'),
-  knowledgeStoreImpl: KnowledgeStoreImpl,
-  registry: IAgentRegistry,
-): Promise<void> {
-  try {
-    const volumes = await docker.listVolumes()
-    const orphanedVolumes = (volumes.Volumes ?? []).filter(
-      (v: { Name: string }) => v.Name.startsWith('project-tab-workspace-')
-    )
-
-    if (orphanedVolumes.length === 0) return
-
-    // eslint-disable-next-line no-console
-    console.log(`[volume-recovery] found ${orphanedVolumes.length} project-tab volume(s), scanning for orphans...`)
-
-    // List running Docker containers managed by project-tab to avoid
-    // treating still-running agent volumes as orphaned. The registry is
-    // empty on server restart, so we check Docker directly.
-    const runningAgentIds = new Set<string>()
-    try {
-      const containers = await docker.listContainers({
-        filters: { label: ['project-tab.managed=true'] },
-      })
-      for (const c of containers) {
-        const agentLabel = c.Labels?.['project-tab.agent-id']
-        if (agentLabel) {
-          runningAgentIds.add(agentLabel)
-        }
-      }
-      if (runningAgentIds.size > 0) {
-        // eslint-disable-next-line no-console
-        console.log(`[volume-recovery] ${runningAgentIds.size} container(s) still running, will skip their volumes`)
-      }
-    } catch (containerErr) {
-      // eslint-disable-next-line no-console
-      console.warn('[volume-recovery] failed to list running containers:', containerErr instanceof Error ? containerErr.message : String(containerErr))
-    }
-
-    for (const vol of orphanedVolumes) {
-      const agentId = vol.Name.replace('project-tab-workspace-', '')
-
-      // Skip volumes belonging to currently running agents (check both registry and Docker)
-      const handle = registry.getHandle(agentId)
-      if (handle && handle.status !== 'error') continue
-      if (runningAgentIds.has(agentId)) continue
-
-      const knownArtifacts = knowledgeStoreImpl.listArtifacts().filter(
-        (a) => a.agentId === agentId
-      )
-
-      try {
-        const result = await volumeRecovery.recover(agentId, knownArtifacts)
-        // eslint-disable-next-line no-console
-        console.log(
-          `[volume-recovery] agent ${agentId}: scanned=${result.filesScanned} skipped=${result.skipped.length} reuploaded=${result.reuploaded.length} orphans=${result.orphans.length} volumeDeleted=${result.volumeDeleted}`
-        )
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error(`[volume-recovery] failed for agent ${agentId}:`, err instanceof Error ? err.message : String(err))
-      }
-    }
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error('[volume-recovery] startup scan failed:', err instanceof Error ? err.message : String(err))
-  }
-}
-
 // ── Graceful shutdown ─────────────────────────────────────────────────────
 
 function setupShutdown(
@@ -548,7 +262,7 @@ function setupShutdown(
   contextInjection: ContextInjectionService,
   localPlugin: LocalProcessPlugin,
   knowledgeStore: KnowledgeStoreImpl,
-  registry: IAgentRegistry,
+  registry: AgentRegistry,
   gateway: AgentGateway,
 ): void {
   let shuttingDown = false

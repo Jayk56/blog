@@ -6,12 +6,17 @@ import type { ApiRouteDeps } from './index'
 import type { AgentHandle } from '../types'
 import type { BrakeScope } from '../types/messages'
 
+type BrakeDeps = Pick<
+  ApiRouteDeps,
+  'registry' | 'knowledgeStore' | 'gateway' | 'decisionQueue' | 'wsHub' | 'checkpointStore'
+>
+
 /**
  * Resolve which agent handles are affected by a given brake scope.
  * For workstream scope, queries the KnowledgeStore snapshot to find
  * agents assigned to that workstream.
  */
-async function resolveAffectedHandles(deps: ApiRouteDeps, scope: BrakeScope): Promise<AgentHandle[]> {
+async function resolveAffectedHandles(deps: BrakeDeps, scope: BrakeScope): Promise<AgentHandle[]> {
   const allHandles = deps.registry.listHandles()
   const activeHandles = allHandles.filter((h) => h.status === 'running' || h.status === 'paused')
 
@@ -38,7 +43,7 @@ async function resolveAffectedHandles(deps: ApiRouteDeps, scope: BrakeScope): Pr
 /**
  * Creates routes for /api/brake endpoints.
  */
-export function createBrakeRouter(deps: ApiRouteDeps): Router {
+export function createBrakeRouter(deps: BrakeDeps): Router {
   const router = Router()
 
   router.post('/', (req, res) => {
