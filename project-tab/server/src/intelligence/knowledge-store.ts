@@ -17,6 +17,7 @@ import type {
   ToolApprovalEvent
 } from '../types/events'
 import type { AgentHandle, SerializedAgentState } from '../types/plugin'
+import type { ProjectConfig } from '../types/project-config'
 import type { StoredCheckpoint } from '../types/service-interfaces'
 
 /** Thrown when an optimistic concurrency check fails. */
@@ -181,6 +182,13 @@ export class KnowledgeStore {
         details_json TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity_type, entity_id);
+
+      CREATE TABLE IF NOT EXISTS project_config (
+        id TEXT PRIMARY KEY,
+        config_json TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
     `)
 
     // Seed version if not present
@@ -624,6 +632,34 @@ export class KnowledgeStore {
       estimatedSizeBytes: row.estimated_size_bytes,
       createdAt: row.created_at,
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Project config
+  // ---------------------------------------------------------------------------
+
+  /** Store or update the project configuration (single-row upsert). */
+  storeProjectConfig(config: ProjectConfig): void {
+    this.db.prepare(`
+      INSERT INTO project_config (id, config_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        config_json = excluded.config_json,
+        updated_at = excluded.updated_at
+    `).run(config.id, JSON.stringify(config), config.createdAt, config.updatedAt)
+    this.recordAudit('project_config', config.id, 'upsert')
+  }
+
+  /** Retrieve the stored project config, or undefined if none exists. */
+  getProjectConfig(): ProjectConfig | undefined {
+    const row = this.db.prepare('SELECT config_json FROM project_config LIMIT 1').get() as { config_json: string } | undefined
+    return row ? JSON.parse(row.config_json) as ProjectConfig : undefined
+  }
+
+  /** Returns true if a project config has been seeded. */
+  hasProject(): boolean {
+    const row = this.db.prepare('SELECT COUNT(*) as cnt FROM project_config').get() as { cnt: number }
+    return row.cnt > 0
   }
 
   // ---------------------------------------------------------------------------

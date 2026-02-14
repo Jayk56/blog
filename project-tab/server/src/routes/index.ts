@@ -27,6 +27,7 @@ import { createQuarantineRouter } from './quarantine'
 import { createTickRouter } from './tick'
 import { createTokenRouter } from './token'
 import { createEventsRouter } from './events'
+import { createProjectRouter } from './project'
 import { createTrustRouter } from './trust'
 import type { TokenService } from '../gateway/token-service'
 export type { AgentRegistry, ArtifactUploadResult, KnowledgeStore, AgentGateway, CheckpointStore, ControlModeManager } from '../types/service-interfaces'
@@ -66,7 +67,21 @@ export function createApiRouter(deps: ApiRouteDeps): Router {
   const router = Router()
 
   router.get('/health', (_req, res) => {
-    res.status(200).json({ status: 'ok', tick: deps.tickService.currentTick() })
+    const base: Record<string, unknown> = { status: 'ok', tick: deps.tickService.currentTick() }
+    const config = deps.knowledgeStoreImpl?.getProjectConfig()
+    if (config) {
+      const snapshot = deps.knowledgeStoreImpl!.getSnapshot()
+      base.project = {
+        seeded: true,
+        id: config.id,
+        title: config.title,
+        workstreamCount: config.workstreams.length,
+        artifactCount: snapshot.artifactIndex.length,
+      }
+    } else {
+      base.project = { seeded: false }
+    }
+    res.status(200).json(base)
   })
 
   if (deps.userAuthService) {
@@ -93,6 +108,7 @@ export function createApiRouter(deps: ApiRouteDeps): Router {
   router.use('/events', createEventsRouter(deps))
   router.use('/quarantine', createQuarantineRouter())
   router.use('/tick', createTickRouter({ tickService: deps.tickService }))
+  router.use('/project', createProjectRouter(deps))
 
   return router
 }

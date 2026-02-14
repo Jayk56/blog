@@ -308,6 +308,18 @@ export const knowledgeSnapshotSchema = z.object({
   estimatedTokens: z.number().int().nonnegative()
 })
 
+export const workstreamContextSchema = z.object({
+  description: z.string(),
+  keyFiles: z.array(z.string()),
+  exports: z.array(z.string()).optional(),
+  dependencies: z.array(z.string()).optional(),
+  status: z.enum(['active', 'paused', 'completed']).optional(),
+  activeAgentIds: z.array(z.string()).optional(),
+  artifactCount: z.number().int().nonnegative().optional(),
+  pendingDecisionCount: z.number().int().nonnegative().optional(),
+  recentCoherenceIssueCount: z.number().int().nonnegative().optional(),
+})
+
 const agentBriefSchema = z.object({
   agentId: z.string(),
   role: z.string(),
@@ -396,7 +408,8 @@ const agentBriefSchema = z.object({
     })
     .optional(),
   secretRefs: z.array(secretRefSchema).optional(),
-  providerConfig: z.record(z.string(), z.unknown()).optional()
+  providerConfig: z.record(z.string(), z.unknown()).optional(),
+  workstreamContext: workstreamContextSchema.optional()
 })
 
 const brakeScopeSchema = z.union([
@@ -485,6 +498,67 @@ export const submitCheckpointRequestSchema = z.object({
   serializedBy: z.enum(['pause', 'kill_grace', 'crash_recovery', 'decision_checkpoint']),
   estimatedSizeBytes: z.number().int().nonnegative(),
   decisionId: z.string().optional()
+})
+
+export const workstreamDefinitionSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string(),
+  keyFiles: z.array(z.string()),
+  status: z.enum(['active', 'paused', 'completed']).optional(),
+  exports: z.array(z.string()).optional(),
+  dependencies: z.array(z.string()).optional(),
+  _autoDescription: z.boolean().optional()
+})
+
+export const seedArtifactSchema = z.object({
+  name: z.string().min(1),
+  kind: artifactKindSchema,
+  workstream: z.string().min(1),
+  uri: z.string().optional(),
+  contentHash: z.string().optional(),
+  sizeBytes: z.number().int().nonnegative().optional(),
+})
+
+export const seedProvenanceSchema = z.object({
+  source: z.enum(['bootstrap-cli', 'api', 'manual']),
+  gitCommit: z.string().optional(),
+  gitBranch: z.string().optional(),
+  repoRoot: z.string().optional(),
+  scannedAt: z.string().optional(),
+})
+
+export const projectSeedSchema = z.object({
+  schemaVersion: z.number().int().min(1).default(1),
+  project: z.object({
+    title: z.string().min(1),
+    description: z.string().min(1),
+    goals: z.array(z.string().min(1)).min(1),
+    checkpoints: z.array(z.string().min(1)).min(1),
+    constraints: z.array(z.string()).optional(),
+    framework: z.string().optional()
+  }),
+  workstreams: z.array(workstreamDefinitionSchema).min(1),
+  artifacts: z.array(seedArtifactSchema).optional(),
+  repoRoot: z.string().optional(),
+  provenance: seedProvenanceSchema.optional(),
+  defaultTools: z.array(z.string()).optional(),
+  defaultConstraints: z.array(z.string()).optional(),
+  defaultEscalation: z.object({
+    alwaysEscalate: z.array(z.string()).optional(),
+    neverEscalate: z.array(z.string()).optional()
+  }).optional()
+})
+
+export const draftBriefRequestSchema = z.object({
+  agentId: z.string().optional(),
+  role: z.string().min(1),
+  description: z.string().min(1),
+  workstream: z.string().min(1),
+  modelPreference: z.string().optional(),
+  readableWorkstreams: z.array(z.string()).optional(),
+  additionalConstraints: z.array(z.string()).optional(),
+  additionalTools: z.array(z.string()).optional()
 })
 
 /**

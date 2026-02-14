@@ -35,6 +35,9 @@ export interface KnowledgeStore {
   getSnapshot(pendingDecisions?: DecisionEvent[]): Promise<KnowledgeSnapshot>
   appendEvent(envelope: EventEnvelope): Promise<void>
   storeArtifactContent?(agentId: string, artifactId: string, content: string, mimeType?: string): ArtifactUploadResult
+  storeProjectConfig?(config: import('./project-config').ProjectConfig): void
+  getProjectConfig?(): import('./project-config').ProjectConfig | undefined
+  hasProject?(): boolean
 }
 
 /** Agent gateway interface used by routes. */

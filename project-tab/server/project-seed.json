@@ -1,0 +1,1226 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "title": "project-tab-server",
+    "description": "Orchestration server for human-agent project management. Manages agent lifecycles, trust scoring, decision queues, knowledge graphs, and coherence monitoring for multi-agent coding sessions.",
+    "goals": [
+      "Dogfood the bootstrap/seed/draft-brief pipeline on the project-tab codebase itself",
+      "Connect the React frontend prototype to the real backend API via WebSocket + REST",
+      "Demonstrate end-to-end agent spawning: seed project \u2192 draft brief \u2192 spawn agent \u2192 receive events \u2192 render in UI",
+      "All 1003+ tests passing, zero TS errors"
+    ],
+    "checkpoints": [
+      "Bootstrap CLI scans repo and seeds server successfully",
+      "draft-brief generates usable agent context for every workstream",
+      "Frontend connects to real backend WebSocket and renders live agent state",
+      "At least one real agent (Claude or Codex adapter) spawns and produces events visible in UI",
+      "All Vitest tests passing, zero TypeScript errors"
+    ],
+    "constraints": [
+      "TypeScript strict mode enabled \u2014 no implicit any, strict null checks",
+      "ESM module system (import/export, no require)",
+      "Must pass existing tests before merging",
+      "Don't modify files outside assigned workstream without escalating",
+      "Prefer extending existing patterns (DI via AppDeps, Zod validation, event bus) over introducing new paradigms"
+    ],
+    "framework": "Express.js API server with SQLite (better-sqlite3) persistence, JWT (jose) authentication, WebSocket (ws) real-time communication, Zod validation, Docker (dockerode) container management"
+  },
+  "workstreams": [
+    {
+      "id": "auth",
+      "name": "auth",
+      "description": "Issues and validates JWT tokens used for frontend/API authentication.",
+      "keyFiles": [
+        "src/auth/index.ts",
+        "src/auth/auth-service.ts",
+        "src/auth/middleware.ts"
+      ],
+      "status": "active",
+      "exports": [
+        "AuthService",
+        "AuthRole",
+        "AuthServiceOptions",
+        "IssueUserTokenInput",
+        "IssuedUserToken",
+        "UserTokenClaims",
+        "createAuthMiddleware",
+        "getRequestAuth",
+        "AuthenticatedRequest",
+        "AuthenticatedUser",
+        "AuthMiddlewareOptions"
+      ],
+      "dependencies": [
+        "identity"
+      ],
+      "_autoDescription": true
+    },
+    {
+      "id": "gateway",
+      "name": "gateway",
+      "description": "Agent lifecycle gateway: spawns adapter shims (local process or Docker container), manages port allocation, streams events via WebSocket, provisions MCP servers, and handles JWT-based agent auth.",
+      "keyFiles": [
+        "src/gateway/adapter-http-client.ts",
+        "src/gateway/child-process-manager.ts",
+        "src/gateway/container-orchestrator.ts",
+        "src/gateway/container-plugin.ts",
+        "src/gateway/event-stream-client.ts",
+        "src/gateway/local-http-plugin.ts",
+        "src/gateway/local-process-plugin.ts",
+        "src/gateway/mcp-provisioner.ts",
+        "src/gateway/port-pool.ts",
+        "src/gateway/token-service.ts"
+      ],
+      "status": "active",
+      "exports": [
+        "AdapterHttpError",
+        "AdapterHttpClient",
+        "SpawnResult",
+        "SpawnShimOptions",
+        "ChildProcessManager",
+        "ContainerCreateResult",
+        "ContainerCreateOptions",
+        "ContainerOrchestrator",
+        "ContainerPluginOptions",
+        "ContainerPlugin",
+        "WebSocketLike",
+        "WebSocketFactory",
+        "EventStreamClientOptions",
+        "EventStreamClient",
+        "LocalHttpPluginOptions",
+        "LocalHttpPlugin",
+        "LocalProcessPluginOptions",
+        "LocalProcessPlugin",
+        "ResolvedMCPServer",
+        "MCPProvisionResult"
+      ],
+      "dependencies": [
+        "types",
+        "validation",
+        "identity"
+      ],
+      "_autoDescription": false
+    },
+    {
+      "id": "identity",
+      "name": "identity",
+      "description": "Generic HS256 JWT service with shared issue/verify mechanics.",
+      "keyFiles": [
+        "src/identity/index.ts",
+        "src/identity/jwt-service.ts"
+      ],
+      "status": "active",
+      "exports": [
+        "JwtService",
+        "IssuedToken",
+        "JwtServiceOptions"
+      ],
+      "_autoDescription": true
+    },
+    {
+      "id": "intelligence",
+      "name": "intelligence",
+      "description": "Intelligence layer: trust scoring, decision queues, SQLite knowledge store, coherence monitoring (file conflict + embedding + LLM review), context injection service, and snapshot sizing for token budgets.",
+      "keyFiles": [
+        "src/intelligence/index.ts",
+        "src/intelligence/coherence-monitor.ts",
+        "src/intelligence/coherence-review-service.ts",
+        "src/intelligence/context-injection-service.ts",
+        "src/intelligence/decision-queue.ts",
+        "src/intelligence/embedding-service.ts",
+        "src/intelligence/knowledge-store.ts",
+        "src/intelligence/snapshot-sizer.ts",
+        "src/intelligence/trust-engine.ts"
+      ],
+      "status": "active",
+      "exports": [
+        "TrustEngine",
+        "TrustOutcome",
+        "TrustCalibrationConfig",
+        "CalibrationLogEntry",
+        "DecisionQueue",
+        "DecisionTimeoutPolicy",
+        "DecisionStatus",
+        "QueuedDecision",
+        "KnowledgeStore",
+        "CoherenceMonitor",
+        "CoherenceMonitorConfig",
+        "EmbeddingService",
+        "CoherenceCandidate",
+        "CoherenceReviewRequest",
+        "CoherenceReviewResult",
+        "CoherenceReviewService"
+      ],
+      "dependencies": [
+        "types"
+      ],
+      "_autoDescription": false
+    },
+    {
+      "id": "lib",
+      "name": "lib",
+      "description": "Shared library utilities: seed merge logic used by both CLI bootstrap and API routes.",
+      "keyFiles": [
+        "src/lib/merge-seeds.ts"
+      ],
+      "status": "active",
+      "exports": [
+        "mergeSeeds",
+        "configToSeedPayload"
+      ],
+      "dependencies": [
+        "types"
+      ],
+      "_autoDescription": false
+    },
+    {
+      "id": "registry",
+      "name": "registry",
+      "description": "AgentRegistry tracks all active agent handles in memory.",
+      "keyFiles": [
+        "src/registry/agent-registry.ts"
+      ],
+      "status": "active",
+      "exports": [
+        "AgentRegistry"
+      ],
+      "dependencies": [
+        "types"
+      ],
+      "_autoDescription": true
+    },
+    {
+      "id": "routes",
+      "name": "routes",
+      "description": "Express API routes: agents CRUD + spawn/kill, decisions, artifacts, trust, brake, control mode, project seed/brief, auth tokens, WebSocket event streaming, and quarantine.",
+      "keyFiles": [
+        "src/routes/index.ts",
+        "src/routes/agents.ts",
+        "src/routes/artifacts.ts",
+        "src/routes/auth.ts",
+        "src/routes/brake.ts",
+        "src/routes/control.ts",
+        "src/routes/decisions.ts",
+        "src/routes/events.ts",
+        "src/routes/project.ts",
+        "src/routes/quarantine.ts"
+      ],
+      "status": "active",
+      "exports": [
+        "AgentRegistry",
+        "ArtifactUploadResult",
+        "KnowledgeStore",
+        "AgentGateway",
+        "CheckpointStore",
+        "ControlModeManager",
+        "ApiRouteDeps",
+        "createApiRouter"
+      ],
+      "dependencies": [
+        "validation",
+        "types",
+        "auth",
+        "intelligence",
+        "gateway",
+        "lib"
+      ],
+      "_autoDescription": false
+    },
+    {
+      "id": "types",
+      "name": "types",
+      "description": "Type definitions: events, agent briefs, knowledge snapshots, plugin interfaces, transport protocols, project config, resolution types, and service interfaces.",
+      "keyFiles": [
+        "src/types/index.ts",
+        "src/types/brief.ts",
+        "src/types/events.ts",
+        "src/types/messages.ts",
+        "src/types/plugin.ts",
+        "src/types/project-config.ts",
+        "src/types/resolution.ts",
+        "src/types/service-interfaces.ts",
+        "src/types/snapshot.ts",
+        "src/types/transport.ts"
+      ],
+      "status": "active",
+      "exports": [
+        "*"
+      ],
+      "_autoDescription": false
+    },
+    {
+      "id": "validation",
+      "name": "validation",
+      "description": "Zod validation schemas for all event types, seed payloads, and API requests. Quarantine system for malformed events.",
+      "keyFiles": [
+        "src/validation/quarantine.ts",
+        "src/validation/schemas.ts"
+      ],
+      "status": "active",
+      "exports": [
+        "QuarantinedEvent",
+        "quarantineEvent",
+        "getQuarantined",
+        "clearQuarantine",
+        "validateOrQuarantine",
+        "severitySchema",
+        "blastRadiusSchema",
+        "controlModeSchema",
+        "artifactKindSchema",
+        "coherenceCategorySchema",
+        "actionKindSchema",
+        "decisionOptionSchema",
+        "provenanceSchema",
+        "statusEventSchema",
+        "optionDecisionEventSchema",
+        "toolApprovalEventSchema",
+        "artifactEventSchema",
+        "coherenceEventSchema",
+        "toolCallEventSchema",
+        "completionEventSchema"
+      ],
+      "dependencies": [
+        "types"
+      ],
+      "_autoDescription": false
+    },
+    {
+      "id": "core",
+      "name": "core",
+      "description": "Core server: Express app bootstrap, event bus (pub/sub with backpressure), event classifier, handler wiring, WebSocket hub for frontend state sync, and tick service.",
+      "keyFiles": [
+        "src/index.ts",
+        "src/app.ts",
+        "src/bus.ts",
+        "src/classifier.ts",
+        "src/event-handlers.ts",
+        "src/startup.ts",
+        "src/tick.ts",
+        "src/ws-hub.ts"
+      ],
+      "status": "active",
+      "exports": [
+        "AppDeps",
+        "createApp",
+        "attachWebSocketUpgrade",
+        "EventBusFilter",
+        "EventBusHandler",
+        "SequenceGapWarning",
+        "EventBusMetrics",
+        "BackpressureConfig",
+        "EventBus",
+        "Workspace",
+        "ClassifiedEvent",
+        "EventClassifier",
+        "EventHandlerDeps",
+        "wireEventHandlers",
+        "handleClassificationAndFanOut",
+        "handleDecisionAndAutoCheckpoint",
+        "handleArtifactStorageAndCoherence",
+        "handleLifecycleTracking",
+        "handleCompletionTrustTracking",
+        "handleErrorTrustTracking"
+      ],
+      "dependencies": [
+        "identity",
+        "types",
+        "validation",
+        "auth",
+        "intelligence",
+        "gateway",
+        "lib"
+      ],
+      "_autoDescription": false
+    },
+    {
+      "id": "integration",
+      "name": "integration",
+      "description": "Cross-cutting integration and end-to-end test suite",
+      "keyFiles": [],
+      "status": "active",
+      "_autoDescription": true
+    }
+  ],
+  "artifacts": [
+    {
+      "name": "auth-service.ts",
+      "kind": "code",
+      "workstream": "auth",
+      "uri": "src/auth/auth-service.ts",
+      "contentHash": "6322ee9be5bfb12ac842d5f8a41dfe4465b2b737bd69ec669c7d10f6a1228ee8",
+      "sizeBytes": 2605
+    },
+    {
+      "name": "index.ts",
+      "kind": "code",
+      "workstream": "auth",
+      "uri": "src/auth/index.ts",
+      "contentHash": "34903313494bdb54a85148ee91f2d62d74a421bfc81f6bcc3a8f25a54c974377",
+      "sizeBytes": 327
+    },
+    {
+      "name": "middleware.ts",
+      "kind": "code",
+      "workstream": "auth",
+      "uri": "src/auth/middleware.ts",
+      "contentHash": "80a2ea093076788fc573440750d36a526d50e11c55824a4205a2abd4a199aadc",
+      "sizeBytes": 2921
+    },
+    {
+      "name": "auth-service.test.ts",
+      "kind": "test",
+      "workstream": "auth",
+      "uri": "test/auth/auth-service.test.ts",
+      "contentHash": "9272b6304690a95633566237c057b491b0a907dffb312f58832e3e788f342a95",
+      "sizeBytes": 2313
+    },
+    {
+      "name": "adapter-http-client.ts",
+      "kind": "code",
+      "workstream": "gateway",
+      "uri": "src/gateway/adapter-http-client.ts",
+      "contentHash": "5a215a351a1212fc6e6fc91298339d190d0bebc05d267d31a7080f331d71a4a5",
+      "sizeBytes": 1295
+    },
+    {
+      "name": "child-process-manager.ts",
+      "kind": "code",
+      "workstream": "gateway",
+      "uri": "src/gateway/child-process-manager.ts",
+      "contentHash": "675c10bcbcc0006297b0a700015331819d6adff791a5bbd6f8428379be04e6ad",
+      "sizeBytes": 5187
+    },
+    {
+      "name": "container-orchestrator.ts",
+      "kind": "code",
+      "workstream": "gateway",
+      "uri": "src/gateway/container-orchestrator.ts",
+      "contentHash": "32a7ca8a5b173c1f539a71fa30923e72ceed1ca1259653ee4010099da344b8c0",
+      "sizeBytes": 8699
+    },
+    {
+      "name": "container-plugin.ts",
+      "kind": "code",
+      "workstream": "gateway",
+      "uri": "src/gateway/container-plugin.ts",
+      "contentHash": "ec8d18c60af580e067ff1ccebf05d9ee66abec40f32df26851b3a0844c0aed9a",
+      "sizeBytes": 7309
+    },
+    {
+      "name": "event-stream-client.ts",
+      "kind": "code",
+      "workstream": "gateway",
+      "uri": "src/gateway/event-stream-client.ts",
+      "contentHash": "5ffe35f395d727a0fc74a0444bfff462a79192414b1d5585f39fd912dd7845cd",
+      "sizeBytes": 7702
+    },
+    {
+      "name": "local-http-plugin.ts",
+      "kind": "code",
+      "workstream": "gateway",
+      "uri": "src/gateway/local-http-plugin.ts",
+      "contentHash": "ad2527aa4340410e35bd65da17f7b26daf7be4ff4c4503486a585ec50d7c0b71",
+      "sizeBytes": 3258
+    },
+    {
+      "name": "local-process-plugin.ts",
+      "kind": "code",
+      "workstream": "gateway",
+      "uri": "src/gateway/local-process-plugin.ts",
+      "contentHash": "25c591891626a3ad908fb9b6599345cdc6abf198e966171fbd9eab19a7bd6974",
+      "sizeBytes": 10410
+    },
+    {
+      "name": "mcp-provisioner.ts",
+      "kind": "code",
+      "workstream": "gateway",
+      "uri": "src/gateway/mcp-provisioner.ts",
+      "contentHash": "1250b5e7ee21490bff56af73a617aa612109a813c7790bfdd75a3bca626d68c7",
+      "sizeBytes": 9941
+    },
+    {
+      "name": "port-pool.ts",
+      "kind": "code",
+      "workstream": "gateway",
+      "uri": "src/gateway/port-pool.ts",
+      "contentHash": "66178133e7ce24f40df8932864707237f9e6dcbceec995e53e178e34155c33ef",
+      "sizeBytes": 1571
+    },
+    {
+      "name": "token-service.ts",
+      "kind": "code",
+      "workstream": "gateway",
+      "uri": "src/gateway/token-service.ts",
+      "contentHash": "79397f72097c78e08168b71a3bd36bdc4de7e7d7a04cead29845e835bde148d4",
+      "sizeBytes": 2615
+    },
+    {
+      "name": "volume-recovery.ts",
+      "kind": "code",
+      "workstream": "gateway",
+      "uri": "src/gateway/volume-recovery.ts",
+      "contentHash": "da96166768312eff5802981bb877e9fe044c1d15ba11e8928f4b390b21e225cf",
+      "sizeBytes": 11258
+    },
+    {
+      "name": "child-process-manager.test.ts",
+      "kind": "test",
+      "workstream": "gateway",
+      "uri": "test/gateway/child-process-manager.test.ts",
+      "contentHash": "b17c249709d9d2682db2529db99b2f53eec87a8959382bfe36c169b3eb26fa39",
+      "sizeBytes": 3363
+    },
+    {
+      "name": "container-orchestrator.test.ts",
+      "kind": "test",
+      "workstream": "gateway",
+      "uri": "test/gateway/container-orchestrator.test.ts",
+      "contentHash": "83b589633f7212c5ff75781896dd1037b9752aa06c9fb693520dd4c52d026fee",
+      "sizeBytes": 20662
+    },
+    {
+      "name": "container-plugin.test.ts",
+      "kind": "test",
+      "workstream": "gateway",
+      "uri": "test/gateway/container-plugin.test.ts",
+      "contentHash": "1905ac3cbd578da5479208996586f2c24a659e712c99784951e3c21c7c2ec7e7",
+      "sizeBytes": 18257
+    },
+    {
+      "name": "event-stream-client.test.ts",
+      "kind": "test",
+      "workstream": "gateway",
+      "uri": "test/gateway/event-stream-client.test.ts",
+      "contentHash": "c3483613afa1db017e492e56c1265da32c4b7216b75e03f3448edf42493335ec",
+      "sizeBytes": 15463
+    },
+    {
+      "name": "local-http-plugin.test.ts",
+      "kind": "test",
+      "workstream": "gateway",
+      "uri": "test/gateway/local-http-plugin.test.ts",
+      "contentHash": "acf20e66d78c6168cb618e6a0e05121cc1931fa38176757596349b37ef496d59",
+      "sizeBytes": 12217
+    },
+    {
+      "name": "local-process-plugin.test.ts",
+      "kind": "test",
+      "workstream": "gateway",
+      "uri": "test/gateway/local-process-plugin.test.ts",
+      "contentHash": "a4aee8bedfc7123fc0fe08d4d6125b3281990c4906667f7c9b45c84a9980ed47",
+      "sizeBytes": 21155
+    },
+    {
+      "name": "mcp-integration.test.ts",
+      "kind": "test",
+      "workstream": "gateway",
+      "uri": "test/gateway/mcp-integration.test.ts",
+      "contentHash": "0ae095532d4821e0029b900a8ed18095bdbc7bdda2fa923fb088c935070bf113",
+      "sizeBytes": 9024
+    },
+    {
+      "name": "mcp-provisioner.test.ts",
+      "kind": "test",
+      "workstream": "gateway",
+      "uri": "test/gateway/mcp-provisioner.test.ts",
+      "contentHash": "9d08592290d6ae732c85f541af53a9136237d86013c916ef8ab1adea2f8dca7e",
+      "sizeBytes": 19441
+    },
+    {
+      "name": "token-service.test.ts",
+      "kind": "test",
+      "workstream": "gateway",
+      "uri": "test/gateway/token-service.test.ts",
+      "contentHash": "243eda7ce30f5f861d843b7155897ad8a769a2eec7d151ec2ff339a41098963a",
+      "sizeBytes": 7616
+    },
+    {
+      "name": "index.ts",
+      "kind": "code",
+      "workstream": "identity",
+      "uri": "src/identity/index.ts",
+      "contentHash": "bdea8d20b40590b905251802fd2ee2c8a83e63f8bbed4222d4094b735b26e53a",
+      "sizeBytes": 92
+    },
+    {
+      "name": "jwt-service.ts",
+      "kind": "code",
+      "workstream": "identity",
+      "uri": "src/identity/jwt-service.ts",
+      "contentHash": "f5919ef5ce79b35c8064332cb16cededea5b314ca77f7913ec28e7e80c38752a",
+      "sizeBytes": 2298
+    },
+    {
+      "name": "coherence-monitor.ts",
+      "kind": "code",
+      "workstream": "intelligence",
+      "uri": "src/intelligence/coherence-monitor.ts",
+      "contentHash": "539809f47e75f3dc9df4fe72ec76345b3cfc25af7da0e16cbfa9d6bb37253e06",
+      "sizeBytes": 18269
+    },
+    {
+      "name": "coherence-review-service.ts",
+      "kind": "code",
+      "workstream": "intelligence",
+      "uri": "src/intelligence/coherence-review-service.ts",
+      "contentHash": "ef9f8fc79b6b76dfa71e3ae108ff8a6287b5cd5a80174b2148e29a7e6f52bb7c",
+      "sizeBytes": 6781
+    },
+    {
+      "name": "context-injection-service.ts",
+      "kind": "code",
+      "workstream": "intelligence",
+      "uri": "src/intelligence/context-injection-service.ts",
+      "contentHash": "3d15067c299b902897bd82714e506d3a4d482b4b9c967a3fa125eae5e66bdd5b",
+      "sizeBytes": 14990
+    },
+    {
+      "name": "decision-queue.ts",
+      "kind": "code",
+      "workstream": "intelligence",
+      "uri": "src/intelligence/decision-queue.ts",
+      "contentHash": "337a71ce40f93040e20ba380433b638bc6e5e3bc2e56d009581b51874df917fc",
+      "sizeBytes": 9384
+    },
+    {
+      "name": "embedding-service.ts",
+      "kind": "code",
+      "workstream": "intelligence",
+      "uri": "src/intelligence/embedding-service.ts",
+      "contentHash": "891d886860bb696c815caaa7cff7936cebf0b4a7701c045c533b164de512abb4",
+      "sizeBytes": 4380
+    },
+    {
+      "name": "index.ts",
+      "kind": "code",
+      "workstream": "intelligence",
+      "uri": "src/intelligence/index.ts",
+      "contentHash": "1ada530c20a25f260c23c3c409e7e07b261282acbc4647f4c7d7f0d117e00fe3",
+      "sizeBytes": 669
+    },
+    {
+      "name": "knowledge-store.ts",
+      "kind": "code",
+      "workstream": "intelligence",
+      "uri": "src/intelligence/knowledge-store.ts",
+      "contentHash": "0d17d2ea108fad79b7c4900c109eb2daba9fa01dc5bbbd02247a73a14fde7a59",
+      "sizeBytes": 35281
+    },
+    {
+      "name": "snapshot-sizer.ts",
+      "kind": "code",
+      "workstream": "intelligence",
+      "uri": "src/intelligence/snapshot-sizer.ts",
+      "contentHash": "57cfb1abb6c77ac1eba4da803a06ea1960f6bbfe4102c43f3a88d2aa9209e358",
+      "sizeBytes": 6694
+    },
+    {
+      "name": "trust-engine.ts",
+      "kind": "code",
+      "workstream": "intelligence",
+      "uri": "src/intelligence/trust-engine.ts",
+      "contentHash": "9718f3f12e091d97f54ee742733ff1343e6f50e66aefe5638f7ad72d37defb26",
+      "sizeBytes": 8741
+    },
+    {
+      "name": "checkpoint.test.ts",
+      "kind": "test",
+      "workstream": "intelligence",
+      "uri": "test/intelligence/checkpoint.test.ts",
+      "contentHash": "8db5d01b87df857984891fc8719ebfa55e2ea7705fc79e76eb7a1667fbdfe847",
+      "sizeBytes": 12404
+    },
+    {
+      "name": "coherence-layers.test.ts",
+      "kind": "test",
+      "workstream": "intelligence",
+      "uri": "test/intelligence/coherence-layers.test.ts",
+      "contentHash": "7e486d7b72e4ef5bca8ce623a0cfa2ea1e19da0bfbec4d24fe99999f7d2b634a",
+      "sizeBytes": 25206
+    },
+    {
+      "name": "coherence-monitor.test.ts",
+      "kind": "test",
+      "workstream": "intelligence",
+      "uri": "test/intelligence/coherence-monitor.test.ts",
+      "contentHash": "fb849662f306d2b2b60fee942b70f6484174b382f07da25399befaff76ea5791",
+      "sizeBytes": 9674
+    },
+    {
+      "name": "coherence-review-service.test.ts",
+      "kind": "test",
+      "workstream": "intelligence",
+      "uri": "test/intelligence/coherence-review-service.test.ts",
+      "contentHash": "71ded1253f5bc853586a42f23672b94f0b8324e4a9ded27e0b451b9445279b32",
+      "sizeBytes": 6931
+    },
+    {
+      "name": "context-injection-service.test.ts",
+      "kind": "test",
+      "workstream": "intelligence",
+      "uri": "test/intelligence/context-injection-service.test.ts",
+      "contentHash": "6e6917be69bdaa431cdeda91654f76f50c860c6499bc83e41c036e25ff48dcc6",
+      "sizeBytes": 36411
+    },
+    {
+      "name": "decision-queue.test.ts",
+      "kind": "test",
+      "workstream": "intelligence",
+      "uri": "test/intelligence/decision-queue.test.ts",
+      "contentHash": "9fe0b8bc227ee46129f48c1ca9d794ab2ef1ea0b89338de9c4914e8c7a519c4a",
+      "sizeBytes": 20011
+    },
+    {
+      "name": "embedding-service.test.ts",
+      "kind": "test",
+      "workstream": "intelligence",
+      "uri": "test/intelligence/embedding-service.test.ts",
+      "contentHash": "9f0fad242814ae21ab66f8885d6d89f681dedb1cbf5df6eb10335efcec28a1fa",
+      "sizeBytes": 5625
+    },
+    {
+      "name": "knowledge-store-project.test.ts",
+      "kind": "test",
+      "workstream": "intelligence",
+      "uri": "test/intelligence/knowledge-store-project.test.ts",
+      "contentHash": "5ab1d342f8ba98a13a40f01e6e14d9645e8b8e0988f49877777674f4f9789010",
+      "sizeBytes": 2640
+    },
+    {
+      "name": "knowledge-store-sqlite.test.ts",
+      "kind": "test",
+      "workstream": "intelligence",
+      "uri": "test/intelligence/knowledge-store-sqlite.test.ts",
+      "contentHash": "d3c94b9a3956cc4227dfc8d06f7a28e561b63b60d594cd91fb54e6d09eebc786",
+      "sizeBytes": 38534
+    },
+    {
+      "name": "knowledge-store.test.ts",
+      "kind": "test",
+      "workstream": "intelligence",
+      "uri": "test/intelligence/knowledge-store.test.ts",
+      "contentHash": "bd5f81ad70d8aba66092c0156522ac511e64f81bf034eab6629b749428dec79c",
+      "sizeBytes": 12211
+    },
+    {
+      "name": "snapshot-sizer.test.ts",
+      "kind": "test",
+      "workstream": "intelligence",
+      "uri": "test/intelligence/snapshot-sizer.test.ts",
+      "contentHash": "cc4db4e21e849de346a09c968418cd18e2e09dce98c8ee4eea9b13561806bd70",
+      "sizeBytes": 20910
+    },
+    {
+      "name": "merge-seeds.ts",
+      "kind": "code",
+      "workstream": "lib",
+      "uri": "src/lib/merge-seeds.ts",
+      "contentHash": "3a987e80235e866aa98a2814fbba3440902af9e8030088d80b695c94f0d94a9d",
+      "sizeBytes": 4125
+    },
+    {
+      "name": "agent-registry.ts",
+      "kind": "code",
+      "workstream": "registry",
+      "uri": "src/registry/agent-registry.ts",
+      "contentHash": "c09c7310a537d0001faa1d80bce40b2ee1a6d37844115a4c8e015c117a94326f",
+      "sizeBytes": 1691
+    },
+    {
+      "name": "agent-registry.test.ts",
+      "kind": "test",
+      "workstream": "registry",
+      "uri": "test/registry/agent-registry.test.ts",
+      "contentHash": "bda9ebb606f3743bc51f712fde3e135b15ee31f1a5b17c42aeee65d797d0755c",
+      "sizeBytes": 3233
+    },
+    {
+      "name": "agents.ts",
+      "kind": "code",
+      "workstream": "routes",
+      "uri": "src/routes/agents.ts",
+      "contentHash": "c042964fda244cabb09fac98340444fb33c10bf22417d4d826c38aecd826a4ee",
+      "sizeBytes": 9450
+    },
+    {
+      "name": "artifacts.ts",
+      "kind": "code",
+      "workstream": "routes",
+      "uri": "src/routes/artifacts.ts",
+      "contentHash": "7ad02c009c117ac9766451865f4d8ae4493c3c54bf6299cc1f5828f133a3c31b",
+      "sizeBytes": 3546
+    },
+    {
+      "name": "auth.ts",
+      "kind": "code",
+      "workstream": "routes",
+      "uri": "src/routes/auth.ts",
+      "contentHash": "703b320e4b10cee6c943cc6b47e9881ec02669ebc6badf85447b31d540f41c15",
+      "sizeBytes": 2670
+    },
+    {
+      "name": "brake.ts",
+      "kind": "code",
+      "workstream": "routes",
+      "uri": "src/routes/brake.ts",
+      "contentHash": "0aedb6cfdf95a53773dfc61d7326c44aba8cef5ce4c4d13a77f264553b46f612",
+      "sizeBytes": 5042
+    },
+    {
+      "name": "control.ts",
+      "kind": "code",
+      "workstream": "routes",
+      "uri": "src/routes/control.ts",
+      "contentHash": "fb011590d2482d21aa6fe110726584e69d00a62ff44e432336814111e914d757",
+      "sizeBytes": 1191
+    },
+    {
+      "name": "decisions.ts",
+      "kind": "code",
+      "workstream": "routes",
+      "uri": "src/routes/decisions.ts",
+      "contentHash": "c6cdf968132806150ded83eec28b13d5667ca1a83757a9c99bc66a47ac63023c",
+      "sizeBytes": 2716
+    },
+    {
+      "name": "events.ts",
+      "kind": "code",
+      "workstream": "routes",
+      "uri": "src/routes/events.ts",
+      "contentHash": "1da8f532b482f6cd5e95f9fd164d17b0103351b7d3fc21648c966c36ef2021a3",
+      "sizeBytes": 1702
+    },
+    {
+      "name": "index.ts",
+      "kind": "code",
+      "workstream": "routes",
+      "uri": "src/routes/index.ts",
+      "contentHash": "37e4276ebd22b71d59e63811b3587448be9e326e1a3900b6401989b5209c2dd8",
+      "sizeBytes": 4318
+    },
+    {
+      "name": "project.ts",
+      "kind": "code",
+      "workstream": "routes",
+      "uri": "src/routes/project.ts",
+      "contentHash": "13f86009554c6c19e5320f914cde8e50e6dcef976ceab37942ecd4d467b8a8d4",
+      "sizeBytes": 6387
+    },
+    {
+      "name": "quarantine.ts",
+      "kind": "code",
+      "workstream": "routes",
+      "uri": "src/routes/quarantine.ts",
+      "contentHash": "6b5f194f16cdde89c65bdd0925f69adddbc26c928cb15408cc12c40c353c074e",
+      "sizeBytes": 687
+    },
+    {
+      "name": "tick.ts",
+      "kind": "code",
+      "workstream": "routes",
+      "uri": "src/routes/tick.ts",
+      "contentHash": "3f4b61e152f6df6fff5cc6fb985a32964605b3f44058497ebaddb5706b5750f6",
+      "sizeBytes": 1003
+    },
+    {
+      "name": "token.ts",
+      "kind": "code",
+      "workstream": "routes",
+      "uri": "src/routes/token.ts",
+      "contentHash": "7fc6ea1500983514445cc905fdfdfc37062423be87184536a849457bf65b73c9",
+      "sizeBytes": 2126
+    },
+    {
+      "name": "trust.ts",
+      "kind": "code",
+      "workstream": "routes",
+      "uri": "src/routes/trust.ts",
+      "contentHash": "66641568a4a3ea52496ba29fbdfa13dfd977cc4a2e2f440da50016d30e425bf3",
+      "sizeBytes": 657
+    },
+    {
+      "name": "utils.ts",
+      "kind": "code",
+      "workstream": "routes",
+      "uri": "src/routes/utils.ts",
+      "contentHash": "b29ddaf821d479fadb8d0907eb774be136b3dddaf79b217211f047ab174a0a76",
+      "sizeBytes": 470
+    },
+    {
+      "name": "artifact-upload.test.ts",
+      "kind": "test",
+      "workstream": "routes",
+      "uri": "test/routes/artifact-upload.test.ts",
+      "contentHash": "f3d54aed2e311a26e9402574ebca3aebd4ababbca4c3dc543ababf414d65ee4b",
+      "sizeBytes": 11381
+    },
+    {
+      "name": "auth.test.ts",
+      "kind": "test",
+      "workstream": "routes",
+      "uri": "test/routes/auth.test.ts",
+      "contentHash": "09836668eaee2da3a41abc5f0160d3158af642017d39fb33125f4e5372e88d63",
+      "sizeBytes": 8037
+    },
+    {
+      "name": "events.test.ts",
+      "kind": "test",
+      "workstream": "routes",
+      "uri": "test/routes/events.test.ts",
+      "contentHash": "8cb8c7aa6e60dcd97d20dbdb76ee4c069fde71491ee8b4fd1780c0c79c668206",
+      "sizeBytes": 25248
+    },
+    {
+      "name": "project.test.ts",
+      "kind": "test",
+      "workstream": "routes",
+      "uri": "test/routes/project.test.ts",
+      "contentHash": "278efd4f46eb6c7e9722800b90b38062241979ec3f76c2774f83a3cf76a2d51f",
+      "sizeBytes": 21774
+    },
+    {
+      "name": "provider-config.test.ts",
+      "kind": "test",
+      "workstream": "routes",
+      "uri": "test/routes/provider-config.test.ts",
+      "contentHash": "bbed61bb608c790ce23bed469ce39615263f92d0087024a3a674f7c966f008c8",
+      "sizeBytes": 8383
+    },
+    {
+      "name": "quarantine.test.ts",
+      "kind": "test",
+      "workstream": "routes",
+      "uri": "test/routes/quarantine.test.ts",
+      "contentHash": "0afcf328c1f24074424ac0bbf19e542b0269758ab4706559af46bf44373f3ea3",
+      "sizeBytes": 3834
+    },
+    {
+      "name": "brief.ts",
+      "kind": "code",
+      "workstream": "types",
+      "uri": "src/types/brief.ts",
+      "contentHash": "fbbeda0664bad408bc670ccdd7168c4a053609ce3a7003bdf73a995a903c9434",
+      "sizeBytes": 5516
+    },
+    {
+      "name": "events.ts",
+      "kind": "code",
+      "workstream": "types",
+      "uri": "src/types/events.ts",
+      "contentHash": "06ddbf096b5e696c3a253a47e54af42b3a1bb2c1447dcfde226008be0dab8403",
+      "sizeBytes": 5526
+    },
+    {
+      "name": "index.ts",
+      "kind": "code",
+      "workstream": "types",
+      "uri": "src/types/index.ts",
+      "contentHash": "ea56d27d748cb47055045b6cfa625c941d53f4dda69ff7a5bb1813c073a6b5f1",
+      "sizeBytes": 218
+    },
+    {
+      "name": "messages.ts",
+      "kind": "code",
+      "workstream": "types",
+      "uri": "src/types/messages.ts",
+      "contentHash": "f701ea298d1f636c52ed2a5a2a9153eb7f52b679f9f68859044a6647ca6d9ec5",
+      "sizeBytes": 2037
+    },
+    {
+      "name": "plugin.ts",
+      "kind": "code",
+      "workstream": "types",
+      "uri": "src/types/plugin.ts",
+      "contentHash": "3923f45474b78dbf7844624c23c01febb88dc481d276a8c990dbc489775e47cf",
+      "sizeBytes": 3431
+    },
+    {
+      "name": "project-config.ts",
+      "kind": "code",
+      "workstream": "types",
+      "uri": "src/types/project-config.ts",
+      "contentHash": "555b1886bc6be93d493e2bdc776effe2d8b7a2ec008045eea366dd4ca2400f56",
+      "sizeBytes": 1746
+    },
+    {
+      "name": "resolution.ts",
+      "kind": "code",
+      "workstream": "types",
+      "uri": "src/types/resolution.ts",
+      "contentHash": "0968dbcc851b562a6e0dbde48e62ac964eb21ab362f8facf83d685ce3d2160cb",
+      "sizeBytes": 957
+    },
+    {
+      "name": "service-interfaces.ts",
+      "kind": "code",
+      "workstream": "types",
+      "uri": "src/types/service-interfaces.ts",
+      "contentHash": "564def52ed009aea35fa2c058ff235205778177dfc85b4f94bffe904102ccb44",
+      "sizeBytes": 2313
+    },
+    {
+      "name": "snapshot.ts",
+      "kind": "code",
+      "workstream": "types",
+      "uri": "src/types/snapshot.ts",
+      "contentHash": "a3b0e657e05d85c54f3047470e0df2fdcfbd1641b9c1b7ecc41de4bdb304ee4a",
+      "sizeBytes": 2307
+    },
+    {
+      "name": "transport.ts",
+      "kind": "code",
+      "workstream": "types",
+      "uri": "src/types/transport.ts",
+      "contentHash": "6e705020ec566ad59c221b5c6920e0dbd242838150dbee0763cc2f05f120c5e1",
+      "sizeBytes": 1255
+    },
+    {
+      "name": "quarantine.ts",
+      "kind": "code",
+      "workstream": "validation",
+      "uri": "src/validation/quarantine.ts",
+      "contentHash": "cc776a1d2ad456e58763a70314e5b4c20869b12f7545ba14af4009a390880072",
+      "sizeBytes": 1306
+    },
+    {
+      "name": "schemas.ts",
+      "kind": "code",
+      "workstream": "validation",
+      "uri": "src/validation/schemas.ts",
+      "contentHash": "29c5acca9657bed763cfd432cb2bc9edc38e0f45a4e6be2467625fb3e6837917",
+      "sizeBytes": 20375
+    },
+    {
+      "name": "app.ts",
+      "kind": "code",
+      "workstream": "core",
+      "uri": "src/app.ts",
+      "contentHash": "6c962c35e24510140197c3f61364f2664fa17e5723cc7b34ebc5781be384f3b6",
+      "sizeBytes": 997
+    },
+    {
+      "name": "bus.ts",
+      "kind": "code",
+      "workstream": "core",
+      "uri": "src/bus.ts",
+      "contentHash": "a07624e381854da9436c46ff7d83ab57e0cb6280a848d665a8137512c74f50bc",
+      "sizeBytes": 9030
+    },
+    {
+      "name": "classifier.ts",
+      "kind": "code",
+      "workstream": "core",
+      "uri": "src/classifier.ts",
+      "contentHash": "5e54d86cf674f68c52f0a822d658762f3e6065c3e0d7214835183287f1e06798",
+      "sizeBytes": 2750
+    },
+    {
+      "name": "event-handlers.ts",
+      "kind": "code",
+      "workstream": "core",
+      "uri": "src/event-handlers.ts",
+      "contentHash": "670d060e70753ec681805d5647d8dc6bed9da4ef4c52085b11c2b64d322b5dd0",
+      "sizeBytes": 7076
+    },
+    {
+      "name": "index.ts",
+      "kind": "code",
+      "workstream": "core",
+      "uri": "src/index.ts",
+      "contentHash": "26b6dfa77dc2f128e4ee9b1d64f1aeeaa3b1b2d249e512604000219bdb0944dd",
+      "sizeBytes": 12767
+    },
+    {
+      "name": "startup.ts",
+      "kind": "code",
+      "workstream": "core",
+      "uri": "src/startup.ts",
+      "contentHash": "315d45d629712160ed41ee43dfe40aade8c3837f81d852618b9bd5a4bb826d15",
+      "sizeBytes": 6699
+    },
+    {
+      "name": "tick.ts",
+      "kind": "code",
+      "workstream": "core",
+      "uri": "src/tick.ts",
+      "contentHash": "d67ef7956114c5892dcd607aabe7d9ba99e425abf93be1a7683c7168c78c78dc",
+      "sizeBytes": 2343
+    },
+    {
+      "name": "ws-hub.ts",
+      "kind": "code",
+      "workstream": "core",
+      "uri": "src/ws-hub.ts",
+      "contentHash": "f3087a0d9e93f4ea817325b61fbfcd90124080e269d37065de2c7d2b9c15ced0",
+      "sizeBytes": 3428
+    },
+    {
+      "name": "bus.test.ts",
+      "kind": "test",
+      "workstream": "core",
+      "uri": "test/bus.test.ts",
+      "contentHash": "f5a90406f5e05a7fd866667518920565b96a61d4ab4ca7eb05245e095ab60bba",
+      "sizeBytes": 14822
+    },
+    {
+      "name": "classifier.test.ts",
+      "kind": "test",
+      "workstream": "core",
+      "uri": "test/classifier.test.ts",
+      "contentHash": "138f9ba6fa19bc2a5a54f734987f25af51139b9973434240c1c724b0b9b82ed1",
+      "sizeBytes": 5597
+    },
+    {
+      "name": "tick.test.ts",
+      "kind": "test",
+      "workstream": "core",
+      "uri": "test/tick.test.ts",
+      "contentHash": "19a2cfa0e85b9c0e0c4ab0d62b9d8d49de68990d852879d721eedc647573b90f",
+      "sizeBytes": 1904
+    },
+    {
+      "name": "validation.test.ts",
+      "kind": "test",
+      "workstream": "core",
+      "uri": "test/validation.test.ts",
+      "contentHash": "028a6bcb05ad68beddcb37711f9ae2dff310edecd288d8cef7f261de58544eb1",
+      "sizeBytes": 1959
+    },
+    {
+      "name": "smoke.test.ts",
+      "kind": "test",
+      "workstream": "integration",
+      "uri": "test/e2e/smoke.test.ts",
+      "contentHash": "3734950985c65f23f4e7a65ae58b3b793e806c91eb20a626eb72b9489a82854c",
+      "sizeBytes": 16257
+    },
+    {
+      "name": "checkpoint-on-decision.test.ts",
+      "kind": "test",
+      "workstream": "integration",
+      "uri": "test/integration/checkpoint-on-decision.test.ts",
+      "contentHash": "030c92d2541250ac36922e35f42966fb64dd310b3963247e58152ab7fd1e69d5",
+      "sizeBytes": 15233
+    },
+    {
+      "name": "coherence-via-bus.test.ts",
+      "kind": "test",
+      "workstream": "integration",
+      "uri": "test/integration/coherence-via-bus.test.ts",
+      "contentHash": "50c0ef9ce0c3700b31b544f7fefb76c582579775ab0e040ec3fd06c64a9d8204",
+      "sizeBytes": 13341
+    },
+    {
+      "name": "e2e-bootstrap.test.ts",
+      "kind": "test",
+      "workstream": "integration",
+      "uri": "test/integration/e2e-bootstrap.test.ts",
+      "contentHash": "4f7b0bb93e1475b11cb6a057af703cdc08b4ae989b0a207a2e70dc9f471c5fde",
+      "sizeBytes": 4990
+    },
+    {
+      "name": "fixtures.ts",
+      "kind": "test",
+      "workstream": "integration",
+      "uri": "test/integration/fixtures.ts",
+      "contentHash": "75238e75d1b774cfc7dc958d7c63e9230b6c1825e1395cc676fc9736c479e4b5",
+      "sizeBytes": 10106
+    },
+    {
+      "name": "mock-adapter-shim.ts",
+      "kind": "test",
+      "workstream": "integration",
+      "uri": "test/integration/mock-adapter-shim.ts",
+      "contentHash": "338ac08639106692184a2882e90f049e78855f928601ad3eca26385aa2d2b3a7",
+      "sizeBytes": 8774
+    },
+    {
+      "name": "phase1-acceptance.test.ts",
+      "kind": "test",
+      "workstream": "integration",
+      "uri": "test/integration/phase1-acceptance.test.ts",
+      "contentHash": "940e7809c0cf435662ac727a8ac82a63bec5e49d8a4982f158390509f2e62620",
+      "sizeBytes": 54123
+    },
+    {
+      "name": "phase1-closeout.test.ts",
+      "kind": "test",
+      "workstream": "integration",
+      "uri": "test/integration/phase1-closeout.test.ts",
+      "contentHash": "2cf8d0d15185825779d94581a96bb2331de5ce9b2d90c9d792c39b929ad8e651",
+      "sizeBytes": 32530
+    },
+    {
+      "name": "phase2-closeout.test.ts",
+      "kind": "test",
+      "workstream": "integration",
+      "uri": "test/integration/phase2-closeout.test.ts",
+      "contentHash": "becf571795c07167da0805d4c17192d11b59150546eb8a46a14aac6567307ffe",
+      "sizeBytes": 32492
+    },
+    {
+      "name": "test-server.ts",
+      "kind": "test",
+      "workstream": "integration",
+      "uri": "test/integration/test-server.ts",
+      "contentHash": "21d1e260c278adb0f460865a74e12e0818549ec8efb439e36eeabe90f98249b1",
+      "sizeBytes": 9926
+    },
+    {
+      "name": "tsconfig.json",
+      "kind": "config",
+      "workstream": "root",
+      "uri": "tsconfig.json",
+      "contentHash": "3324102c27d7f9b0f9475c54100fd7e0c9f8b4b1c58dbd080218bcf785534053",
+      "sizeBytes": 411
+    },
+    {
+      "name": "vitest.config.ts",
+      "kind": "code",
+      "workstream": "root",
+      "uri": "vitest.config.ts",
+      "contentHash": "754c99e7e2b0516e09e0e5e0c98e3eeaaeff5f3196cd693dccf048e8da2f43a2",
+      "sizeBytes": 204
+    },
+    {
+      "name": "package.json",
+      "kind": "config",
+      "workstream": "root",
+      "uri": "package.json",
+      "contentHash": "4896ab68e72443c4a62115e164b314f91ec23a85a8274fc12095eec7ccc218d3",
+      "sizeBytes": 744
+    }
+  ],
+  "repoRoot": "/Users/jayk/Code/blog/project-tab/server",
+  "provenance": {
+    "source": "bootstrap-cli",
+    "gitCommit": "13c44718d768149f3debb62766857f9f7cc51abe",
+    "gitBranch": "project-tab",
+    "repoRoot": "/Users/jayk/Code/blog/project-tab/server",
+    "scannedAt": "2026-02-14T06:39:31.901Z"
+  },
+  "defaultTools": [
+    "Read",
+    "Write",
+    "Edit",
+    "Bash",
+    "Glob",
+    "Grep"
+  ],
+  "defaultConstraints": [
+    "TypeScript strict mode enabled \u2014 no implicit any, strict null checks",
+    "ESM module system (import/export, no require)",
+    "Must pass existing tests before merging",
+    "Don't modify files outside assigned workstream without escalating"
+  ],
+  "defaultEscalation": {
+    "alwaysEscalate": [
+      "Deleting files",
+      "Modifying CI/CD",
+      "Changing public API"
+    ],
+    "neverEscalate": [
+      "Formatting",
+      "Adding comments"
+    ]
+  }
+}

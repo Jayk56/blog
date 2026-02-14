@@ -142,6 +142,20 @@ export interface ContextInjection {
   priority: 'required' | 'recommended' | 'supplementary'
 }
 
+/** Workstream-specific context injected into agent brief. */
+export interface WorkstreamContext {
+  description: string
+  keyFiles: string[]
+  exports?: string[]
+  dependencies?: string[]
+  status?: 'active' | 'paused' | 'completed'
+  // Runtime enrichment from live state
+  activeAgentIds?: string[]
+  artifactCount?: number
+  pendingDecisionCount?: number
+  recentCoherenceIssueCount?: number
+}
+
 /** Full typed agent brief sent to adapter at spawn time. */
 export interface AgentBrief {
   agentId: string
@@ -169,6 +183,7 @@ export interface AgentBrief {
   contextInjectionPolicy?: ContextInjectionPolicy
   secretRefs?: SecretRef[]
   providerConfig?: Record<string, unknown>
+  workstreamContext?: WorkstreamContext
 }
 
 export type {
