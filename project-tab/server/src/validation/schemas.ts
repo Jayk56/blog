@@ -97,7 +97,7 @@ export const toolCallEventSchema = z.object({
   toolCallId: z.string(),
   toolName: z.string(),
   phase: z.enum(['requested', 'running', 'completed', 'failed']),
-  input: z.record(z.string(), z.unknown()),
+  input: z.record(z.string(), z.unknown()).optional(),
   output: z.unknown().optional(),
   approved: z.boolean(),
   durationMs: z.number().int().optional()

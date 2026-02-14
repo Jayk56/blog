@@ -165,7 +165,9 @@ export function createApp(options: { mock?: boolean; workspace?: string } = {}):
     const request: ResolveRequest = req.body
     const resolved = state.runner.resolveDecision(request)
     if (!resolved) {
-      res.status(404).json({ detail: `No pending decision with id ${request.decisionId}` })
+      // Tool-gate decisions are resolved via the server's long-poll endpoint,
+      // so the decision may not exist in the runner. Return 200 gracefully.
+      res.json({ status: 'not_found', decisionId: request.decisionId })
       return
     }
 
@@ -184,6 +186,23 @@ export function createApp(options: { mock?: boolean; workspace?: string } = {}):
       res.json({ providerConfig: state.runner.brief.providerConfig ?? null })
     })
   }
+
+  // POST /checkpoint
+  app.post('/checkpoint', (_req: Request, res: Response) => {
+    if (state.runner === null) {
+      res.status(404).json({ detail: 'No agent running' })
+      return
+    }
+
+    const sessionId = state.runner.handle.sessionId
+    res.json({
+      status: 'accepted',
+      checkpoint: {
+        sdk: 'claude',
+        sessionId,
+      },
+    })
+  })
 
   // POST /inject-context
   app.post('/inject-context', (_req: Request, res: Response) => {

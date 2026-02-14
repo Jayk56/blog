@@ -146,6 +146,65 @@ describe('GET /api/tool-gate/stats', () => {
     const body = await res.json() as any
     expect(body).toEqual({ total: 1, pending: 0, resolved: 1, timedOut: 0 })
   })
+
+  it('counts timed_out decisions correctly', async () => {
+    const { decisionQueue, tickService } = testApp.deps
+    decisionQueue.subscribeTo(tickService)
+
+    decisionQueue.enqueue({
+      type: 'decision',
+      subtype: 'tool_approval',
+      agentId: 'agent-1',
+      decisionId: 'd1',
+      toolName: 'Bash',
+      toolArgs: { command: 'rm -rf /' },
+      severity: 'high',
+      blastRadius: 'large',
+    }, tickService.currentTick())
+
+    // Advance ticks past the timeout threshold (default 100 in test)
+    for (let i = 0; i < 101; i++) {
+      tickService.advance()
+    }
+
+    const res = await fetch(`${testApp.baseUrl}/api/tool-gate/stats`)
+    const body = await res.json() as any
+    expect(body).toEqual({ total: 1, pending: 0, resolved: 0, timedOut: 1 })
+
+    decisionQueue.unsubscribeFrom(tickService)
+  })
+
+  it('excludes non-tool_approval decisions from counts', async () => {
+    const { decisionQueue, tickService } = testApp.deps
+
+    // Enqueue an option decision (not tool_approval)
+    decisionQueue.enqueue({
+      type: 'decision',
+      subtype: 'option',
+      agentId: 'agent-1',
+      decisionId: 'd-option',
+      prompt: 'Which approach?',
+      options: [{ id: 'a', label: 'Option A' }, { id: 'b', label: 'Option B' }],
+      severity: 'medium',
+    }, tickService.currentTick())
+
+    // Enqueue a tool_approval decision
+    decisionQueue.enqueue({
+      type: 'decision',
+      subtype: 'tool_approval',
+      agentId: 'agent-1',
+      decisionId: 'd-tool',
+      toolName: 'Write',
+      toolArgs: { file_path: '/tmp/test.ts', content: '' },
+      severity: 'medium',
+      blastRadius: 'medium',
+    }, tickService.currentTick())
+
+    const res = await fetch(`${testApp.baseUrl}/api/tool-gate/stats`)
+    const body = await res.json() as any
+    // Only the tool_approval should be counted
+    expect(body).toEqual({ total: 1, pending: 1, resolved: 0, timedOut: 0 })
+  })
 })
 
 describe('POST /api/tool-gate/request-approval', () => {

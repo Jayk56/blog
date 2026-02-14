@@ -211,7 +211,7 @@ describe('Resolve endpoint', () => {
     expect(resp.status).toBe(404)
   })
 
-  it('returns 404 for wrong decision id', async () => {
+  it('returns 200 with not_found for wrong decision id', async () => {
     await client.post('/spawn', makeTestBrief())
     // Wait for runner to reach the decision point
     await new Promise(r => setTimeout(r, 700))
@@ -225,7 +225,8 @@ describe('Resolve endpoint', () => {
         actionKind: 'create',
       },
     })
-    expect(resp.status).toBe(404)
+    expect(resp.status).toBe(200)
+    expect(resp.body.status).toBe('not_found')
   })
 })
 

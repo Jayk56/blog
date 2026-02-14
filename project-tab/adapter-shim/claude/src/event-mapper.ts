@@ -81,8 +81,8 @@ export class ClaudeEventMapper {
     const content = (msg?.content ?? data.content) as Array<Record<string, unknown>> | undefined
 
     if (!Array.isArray(content)) {
-      // Might be a simple text message — extract string, not the message object
-      const text = (data.text ?? '') as string
+      // Might be a simple text message — extract from data.text or a plain string message
+      const text = (data.text ?? (typeof msg === 'string' ? msg : '')) as string
       if (text) {
         events.push({
           type: 'status',
