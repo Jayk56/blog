@@ -57,6 +57,8 @@ export interface ServerDecisionSummary {
   summary?: string;
   dueByTick?: number | null;
   toolName?: string;
+  toolArgs?: Record<string, unknown>;
+  reasoning?: string;
 }
 
 export interface ServerCoherenceIssueSummary {
@@ -159,6 +161,7 @@ export interface ServerToolApprovalEvent {
   decisionId: string;
   toolName: string;
   toolArgs: Record<string, unknown>;
+  reasoning?: string;
   severity?: ServerSeverity;
   confidence?: number;
   blastRadius?: ServerBlastRadius;

@@ -9,6 +9,64 @@ import type { DecisionItem, Severity } from '../../types/index.js'
 import { useProjectDispatch, useProjectState, useApi } from '../../lib/context.js'
 import { adaptFrontendResolution } from '../../services/state-adapter.js'
 
+/** Render tool arguments in a readable format. */
+function ToolArgsDetail({ toolArgs }: { toolArgs: Record<string, unknown> }) {
+  const command = toolArgs.command as string | undefined
+  const filePath = (toolArgs.file_path ?? toolArgs.filePath) as string | undefined
+  const oldString = (toolArgs.old_string ?? toolArgs.oldString) as string | undefined
+  const newString = (toolArgs.new_string ?? toolArgs.newString) as string | undefined
+  const content = toolArgs.content as string | undefined
+  const description = toolArgs.description as string | undefined
+
+  return (
+    <div className="space-y-2">
+      {description && (
+        <p className="text-xs text-text-muted italic">{description}</p>
+      )}
+      {filePath && (
+        <div>
+          <span className="text-[10px] uppercase text-text-muted">File</span>
+          <p className="text-sm text-text-primary font-mono bg-surface-2 px-2 py-1 rounded mt-0.5 break-all">
+            {filePath}
+          </p>
+        </div>
+      )}
+      {command && (
+        <div>
+          <span className="text-[10px] uppercase text-text-muted">Command</span>
+          <pre className="text-sm text-text-primary font-mono bg-surface-2 px-3 py-2 rounded mt-0.5 overflow-x-auto whitespace-pre-wrap break-all">
+            {command}
+          </pre>
+        </div>
+      )}
+      {oldString && (
+        <div>
+          <span className="text-[10px] uppercase text-text-muted">Replace</span>
+          <pre className="text-sm text-danger/80 font-mono bg-surface-2 px-3 py-2 rounded mt-0.5 overflow-x-auto whitespace-pre-wrap break-all max-h-40 overflow-y-auto">
+            {oldString}
+          </pre>
+        </div>
+      )}
+      {newString && (
+        <div>
+          <span className="text-[10px] uppercase text-text-muted">With</span>
+          <pre className="text-sm text-success/80 font-mono bg-surface-2 px-3 py-2 rounded mt-0.5 overflow-x-auto whitespace-pre-wrap break-all max-h-40 overflow-y-auto">
+            {newString}
+          </pre>
+        </div>
+      )}
+      {content && !command && (
+        <div>
+          <span className="text-[10px] uppercase text-text-muted">Content</span>
+          <pre className="text-sm text-text-primary font-mono bg-surface-2 px-3 py-2 rounded mt-0.5 overflow-x-auto whitespace-pre-wrap break-all max-h-60 overflow-y-auto">
+            {content}
+          </pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface Props {
   decision: DecisionItem
   onOpenProvenance: (artifactId: string) => void
@@ -120,6 +178,21 @@ export default function DecisionDetail({ decision, onOpenProvenance }: Props) {
       <p className="text-sm text-text-secondary leading-relaxed">
         {decision.summary}
       </p>
+
+      {/* Agent reasoning for tool_approval decisions */}
+      {decision.subtype === 'tool_approval' && decision.reasoning && (
+        <div className="bg-surface-2 rounded-lg px-4 py-3 border-l-2 border-l-accent/40">
+          <span className="text-[10px] uppercase text-text-muted block mb-1">Agent Reasoning</span>
+          <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">
+            {decision.reasoning}
+          </p>
+        </div>
+      )}
+
+      {/* Tool args detail for tool_approval decisions */}
+      {decision.subtype === 'tool_approval' && decision.toolArgs && (
+        <ToolArgsDetail toolArgs={decision.toolArgs} />
+      )}
 
       {/* Metrics row */}
       <div className="flex items-center gap-6 py-3 px-4 bg-surface-2 rounded-lg">

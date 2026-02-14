@@ -57,7 +57,16 @@ export class ClaudeEventMapper {
       return this._handleAssistant(data)
     }
 
-    // Result message (tool results or final)
+    // User message (tool results from Claude CLI)
+    if (type === 'user') {
+      const msg = data.message as Record<string, unknown> | undefined
+      if (msg) {
+        return this._handleToolResults(msg.content as Array<Record<string, unknown>> | undefined)
+      }
+      return events
+    }
+
+    // Result message (final completion)
     if (type === 'result') {
       return this._handleResult(data)
     }
@@ -67,16 +76,18 @@ export class ClaudeEventMapper {
 
   private _handleAssistant(data: Record<string, unknown>): AgentEvent[] {
     const events: AgentEvent[] = []
-    const content = data.content as Array<Record<string, unknown>> | undefined
+    // stream-json wraps content inside data.message.content
+    const msg = data.message as Record<string, unknown> | undefined
+    const content = (msg?.content ?? data.content) as Array<Record<string, unknown>> | undefined
 
     if (!Array.isArray(content)) {
-      // Might be a simple text message
-      const message = (data.message ?? data.text ?? '') as string
-      if (message) {
+      // Might be a simple text message — extract string, not the message object
+      const text = (data.text ?? '') as string
+      if (text) {
         events.push({
           type: 'status',
           agentId: this.agentId,
-          message: message.length > 500 ? message.slice(0, 497) + '...' : message,
+          message: text.length > 500 ? text.slice(0, 497) + '...' : text,
         })
       }
       return events
@@ -120,61 +131,67 @@ export class ClaudeEventMapper {
     return events
   }
 
-  private _handleResult(data: Record<string, unknown>): AgentEvent[] {
+  private _handleToolResults(content: Array<Record<string, unknown>> | undefined): AgentEvent[] {
     const events: AgentEvent[] = []
-    const content = data.content as Array<Record<string, unknown>> | undefined
+    if (!Array.isArray(content)) return events
 
-    if (Array.isArray(content)) {
-      for (const block of content) {
-        if (block.type === 'tool_result') {
-          const toolUseId = (block.tool_use_id ?? block.toolUseId ?? '') as string
-          const tc = this._openToolCalls.get(toolUseId)
-          const toolCallId = tc?.toolCallId ?? uuidv4()
-          const toolName = tc?.toolName ?? 'unknown'
-          const isError = block.is_error === true || block.isError === true
-          const durationMs = tc ? Date.now() - tc.startTime : undefined
+    for (const block of content) {
+      if (block.type === 'tool_result') {
+        const toolUseId = (block.tool_use_id ?? block.toolUseId ?? '') as string
+        const tc = this._openToolCalls.get(toolUseId)
+        const toolCallId = tc?.toolCallId ?? uuidv4()
+        const toolName = tc?.toolName ?? 'unknown'
+        const isError = block.is_error === true || block.isError === true
+        const durationMs = tc ? Date.now() - tc.startTime : undefined
 
-          events.push({
-            type: 'tool_call',
-            agentId: this.agentId,
-            toolCallId,
-            toolName,
-            phase: isError ? 'failed' : 'completed',
-            output: block.content ?? block.output,
-            approved: true,
-            durationMs,
-          })
+        events.push({
+          type: 'tool_call',
+          agentId: this.agentId,
+          toolCallId,
+          toolName,
+          phase: isError ? 'failed' : 'completed',
+          output: block.content ?? block.output,
+          approved: true,
+          durationMs,
+        })
 
-          // Artifact detection: Write or Edit with file_path
-          if (!isError && tc && (toolName === 'Write' || toolName === 'Edit')) {
-            const filePath = (tc.input?.file_path ?? tc.input?.filePath ?? '') as string
-            if (filePath) {
-              const fileName = filePath.split('/').pop() ?? filePath
-              const nowIso = new Date().toISOString()
-              events.push({
-                type: 'artifact',
-                agentId: this.agentId,
-                artifactId: uuidv4(),
-                name: fileName,
-                kind: inferArtifactKind(filePath),
-                workstream: this.workstream,
-                status: 'draft',
-                qualityScore: 0.5,
-                provenance: {
-                  createdBy: this.agentId,
-                  createdAt: nowIso,
-                },
-                uri: filePath,
-              })
-            }
+        // Artifact detection: Write or Edit with file_path
+        if (!isError && tc && (toolName === 'Write' || toolName === 'Edit')) {
+          const filePath = (tc.input?.file_path ?? tc.input?.filePath ?? '') as string
+          if (filePath) {
+            const fileName = filePath.split('/').pop() ?? filePath
+            const nowIso = new Date().toISOString()
+            events.push({
+              type: 'artifact',
+              agentId: this.agentId,
+              artifactId: uuidv4(),
+              name: fileName,
+              kind: inferArtifactKind(filePath),
+              workstream: this.workstream,
+              status: 'draft',
+              qualityScore: 0.5,
+              provenance: {
+                createdBy: this.agentId,
+                createdAt: nowIso,
+              },
+              uri: filePath,
+            })
           }
+        }
 
-          if (tc) {
-            this._openToolCalls.delete(toolUseId)
-          }
+        if (tc) {
+          this._openToolCalls.delete(toolUseId)
         }
       }
     }
+    return events
+  }
+
+  private _handleResult(data: Record<string, unknown>): AgentEvent[] {
+    const events: AgentEvent[] = []
+    // Handle any inline tool results
+    const content = data.content as Array<Record<string, unknown>> | undefined
+    events.push(...this._handleToolResults(content))
 
     // Check if this is a final result (has result field or subtype)
     const subtype = data.subtype as string | undefined

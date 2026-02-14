@@ -100,6 +100,8 @@ export interface ToolApprovalEvent {
   decisionId: string
   toolName: string
   toolArgs: Record<string, unknown>
+  /** Agent's reasoning for this tool call (captured from the preceding assistant text). */
+  reasoning?: string
   severity?: Severity
   confidence?: number
   blastRadius?: BlastRadius

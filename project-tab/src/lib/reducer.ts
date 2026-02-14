@@ -742,10 +742,12 @@ function handleServerEvent(
         // Tool approval decisions: create a minimal DecisionItem if not already present
         const existing = nextState.decisions.find((d) => d.id === serverEvent.decisionId);
         if (!existing) {
+          const toolArgs = serverEvent.toolArgs as Record<string, unknown> | undefined;
+          const toolSummary = formatToolSummary(serverEvent.toolName, toolArgs);
           const newDecision: DecisionItem = {
             id: serverEvent.decisionId,
-            title: `Tool approval: ${serverEvent.toolName}`,
-            summary: `Approve tool call: ${serverEvent.toolName}`,
+            title: formatToolTitle(serverEvent.toolName, toolArgs),
+            summary: toolSummary,
             type: 'architectural',
             subtype: 'tool_approval',
             severity: adaptSeverity(serverEvent.severity ?? 'medium'),
@@ -764,6 +766,8 @@ function handleServerEvent(
             dueByTick: serverEvent.dueByTick ?? null,
             resolved: false,
             resolution: null,
+            toolArgs,
+            reasoning: (serverEvent as any).reasoning as string | undefined,
           };
           nextState.decisions = [...nextState.decisions, newDecision];
         }
@@ -840,6 +844,53 @@ function handleServerEvent(
   }
 
   return nextState;
+}
+
+/** Build a short title for a tool approval decision. */
+function formatToolTitle(toolName: string, toolArgs?: Record<string, unknown>): string {
+  if (!toolArgs) return `Tool approval: ${toolName}`;
+
+  switch (toolName) {
+    case 'Bash': {
+      const cmd = (toolArgs.command ?? '') as string;
+      const short = cmd.length > 60 ? cmd.slice(0, 57) + '...' : cmd;
+      return short ? `Bash: ${short}` : `Bash command`;
+    }
+    case 'Write': {
+      const fp = (toolArgs.file_path ?? toolArgs.filePath ?? '') as string;
+      const name = fp.split('/').pop() ?? fp;
+      return name ? `Write: ${name}` : `Write file`;
+    }
+    case 'Edit': {
+      const fp = (toolArgs.file_path ?? toolArgs.filePath ?? '') as string;
+      const name = fp.split('/').pop() ?? fp;
+      return name ? `Edit: ${name}` : `Edit file`;
+    }
+    default:
+      return `Tool approval: ${toolName}`;
+  }
+}
+
+/** Build a human-readable summary for a tool approval decision. */
+function formatToolSummary(toolName: string, toolArgs?: Record<string, unknown>): string {
+  if (!toolArgs) return `Approve tool call: ${toolName}`;
+
+  switch (toolName) {
+    case 'Bash': {
+      const cmd = (toolArgs.command ?? '') as string;
+      return cmd ? `Run command: ${cmd}` : `Approve Bash command`;
+    }
+    case 'Write': {
+      const fp = (toolArgs.file_path ?? toolArgs.filePath ?? '') as string;
+      return fp ? `Write file: ${fp}` : `Write a file`;
+    }
+    case 'Edit': {
+      const fp = (toolArgs.file_path ?? toolArgs.filePath ?? '') as string;
+      return fp ? `Edit file: ${fp}` : `Edit a file`;
+    }
+    default:
+      return `Approve tool call: ${toolName}`;
+  }
 }
 
 /**

@@ -772,6 +772,8 @@ export class KnowledgeStore {
       } else {
         const toolEvent = d as ToolApprovalEvent
         base.toolName = toolEvent.toolName
+        base.toolArgs = toolEvent.toolArgs
+        base.reasoning = toolEvent.reasoning
         base.confidence = toolEvent.confidence
         base.blastRadius = toolEvent.blastRadius
         base.affectedArtifactIds = toolEvent.affectedArtifactIds

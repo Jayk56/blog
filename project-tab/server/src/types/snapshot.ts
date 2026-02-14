@@ -36,6 +36,10 @@ export interface DecisionSummary {
   dueByTick?: number | null
   /** Tool name for tool_approval decisions. */
   toolName?: string
+  /** Tool arguments for tool_approval decisions. */
+  toolArgs?: Record<string, unknown>
+  /** Agent's reasoning for tool_approval decisions. */
+  reasoning?: string
 }
 
 /** Compact coherence summary in snapshots. */

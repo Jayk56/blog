@@ -83,11 +83,17 @@ export function createApp(options: { mock?: boolean; workspace?: string } = {}):
 
     const brief: AgentBrief = req.body
 
+    // Enable decision gating unless the brief requests full autonomy
+    const enableDecisionGating = brief.controlMode !== 'ecosystem'
+
     let runner: MockRunner | ClaudeRunner
     if (state.mock) {
       runner = new MockRunner(brief)
     } else {
-      runner = new ClaudeRunner(brief, { workspace: state.workspace })
+      runner = new ClaudeRunner(brief, {
+        workspace: state.workspace,
+        enableDecisionGating,
+      })
     }
     state.runner = runner
     runner.start()
@@ -129,12 +135,18 @@ export function createApp(options: { mock?: boolean; workspace?: string } = {}):
     const agentState: SerializedAgentState = req.body
     const brief = agentState.briefSnapshot
 
+    const enableDecisionGating = brief.controlMode !== 'ecosystem'
+
     let runner: MockRunner | ClaudeRunner
     if (state.mock) {
       runner = new MockRunner(brief)
     } else {
       const resumeSessionId = agentState.checkpoint?.sessionId ?? agentState.sessionId
-      runner = new ClaudeRunner(brief, { workspace: state.workspace, resumeSessionId })
+      runner = new ClaudeRunner(brief, {
+        workspace: state.workspace,
+        resumeSessionId,
+        enableDecisionGating,
+      })
     }
     state.runner = runner
     runner.start()

@@ -127,6 +127,10 @@ export interface DecisionItem {
   resolved: boolean;
   /** Resolution details, populated when the decision is acted on. */
   resolution: DecisionResolution | null;
+  /** For tool_approval decisions: the tool arguments (command, file path, etc.). */
+  toolArgs?: Record<string, unknown>;
+  /** For tool_approval decisions: the agent's reasoning for using this tool. */
+  reasoning?: string;
 }
 
 /** Captured when a human resolves a decision. */

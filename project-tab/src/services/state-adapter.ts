@@ -224,6 +224,8 @@ export function adaptDecisionSummary(summary: ServerDecisionSummary, tick: numbe
     dueByTick: summary.dueByTick ?? null,
     resolved: false,
     resolution: null,
+    toolArgs: summary.toolArgs,
+    reasoning: summary.reasoning,
   };
 }
 

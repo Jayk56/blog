@@ -28,6 +28,7 @@ import { createTickRouter } from './tick'
 import { createTokenRouter } from './token'
 import { createEventsRouter } from './events'
 import { createProjectRouter } from './project'
+import { createToolGateRouter } from './tool-gate'
 import { createTrustRouter } from './trust'
 import type { TokenService } from '../gateway/token-service'
 export type { AgentRegistry, ArtifactUploadResult, KnowledgeStore, AgentGateway, CheckpointStore, ControlModeManager } from '../types/service-interfaces'
@@ -109,6 +110,7 @@ export function createApiRouter(deps: ApiRouteDeps): Router {
   router.use('/quarantine', createQuarantineRouter())
   router.use('/tick', createTickRouter({ tickService: deps.tickService }))
   router.use('/project', createProjectRouter(deps))
+  router.use('/tool-gate', createToolGateRouter(deps))
 
   return router
 }

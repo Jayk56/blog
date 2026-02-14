@@ -550,6 +550,13 @@ export const projectSeedSchema = z.object({
   }).optional()
 })
 
+export const toolGateRequestSchema = z.object({
+  agentId: z.string().min(1),
+  toolName: z.string().min(1),
+  toolInput: z.record(z.string(), z.unknown()),
+  toolUseId: z.string().min(1),
+})
+
 export const draftBriefRequestSchema = z.object({
   agentId: z.string().optional(),
   role: z.string().min(1),

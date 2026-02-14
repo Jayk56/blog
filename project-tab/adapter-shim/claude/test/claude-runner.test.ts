@@ -10,6 +10,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { Readable, Writable } from 'node:stream'
+import fs from 'node:fs'
+import path from 'node:path'
+import os from 'node:os'
 import { makeTestBrief } from './helpers.js'
 import type {
   LifecycleEvent,
@@ -156,7 +159,10 @@ describe('ClaudeRunner', () => {
     setupFakeProcess([
       '{"type":"result","subtype":"success","result":"done"}',
     ])
-    const runner = new ClaudeRunner(makeTestBrief(), { workspace: '/tmp/test-ws' })
+    const runner = new ClaudeRunner(makeTestBrief(), {
+      workspace: '/tmp/test-ws',
+      enableDecisionGating: false, // avoid sandbox cwd change
+    })
     runner.start()
     await new Promise(r => setTimeout(r, 100))
 
@@ -168,6 +174,22 @@ describe('ClaudeRunner', () => {
     expect(spawnArgs!.args).toContain('--max-turns')
     expect(spawnArgs!.args).toContain('50')
     expect(spawnArgs!.opts.cwd).toBe('/tmp/test-ws')
+  })
+
+  it('spawns claude CLI with sandbox cwd when decision gating is enabled', async () => {
+    setupFakeProcess([
+      '{"type":"result","subtype":"success","result":"done"}',
+    ])
+    const brief = makeTestBrief('agent-cwd-1')
+    const runner = new ClaudeRunner(brief, {
+      workspace: '/tmp/test-ws',
+      enableDecisionGating: true,
+    })
+    runner.start()
+    await new Promise(r => setTimeout(r, 100))
+
+    expect(spawnArgs).not.toBeNull()
+    expect(spawnArgs!.opts.cwd).toBe('/tmp/test-ws/.claude-agents/agent-cwd-1')
   })
 
   it('spawns claude CLI with --resume for resumed session', async () => {
@@ -530,5 +552,163 @@ describe('ClaudeRunner', () => {
     // Session ID updated
     expect(runner.sessionId).toBe('sess-full')
     expect(runner.handle.status).toBe('completed')
+  })
+
+  // ── Hook injection ────────────────────────────────────────────────
+
+  describe('decision gating hooks', () => {
+    let tmpDir: string
+
+    beforeEach(() => {
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-runner-test-'))
+    })
+
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+    })
+
+    it('writes hooks to isolated sandbox directory', () => {
+      setupFakeProcess([
+        '{"type":"result","subtype":"success","result":"ok"}',
+      ])
+      const brief = makeTestBrief('agent-hook-1')
+      const runner = new ClaudeRunner(brief, {
+        workspace: tmpDir,
+        enableDecisionGating: true,
+      })
+      runner.start()
+
+      // Hooks should be in sandbox, NOT in workspace root
+      const workspaceSettings = path.join(tmpDir, '.claude', 'settings.local.json')
+      expect(fs.existsSync(workspaceSettings)).toBe(false)
+
+      const sandboxSettings = path.join(tmpDir, '.claude-agents', 'agent-hook-1', '.claude', 'settings.local.json')
+      expect(fs.existsSync(sandboxSettings)).toBe(true)
+
+      const settings = JSON.parse(fs.readFileSync(sandboxSettings, 'utf-8'))
+      expect(settings.hooks).toBeDefined()
+      expect(settings.hooks.PreToolUse).toBeDefined()
+      expect(settings.hooks.PreToolUse).toHaveLength(1)
+      expect(settings.hooks.PreToolUse[0].matcher).toBeDefined()
+      expect(settings.hooks.PreToolUse[0].hooks).toHaveLength(1)
+      expect(settings.hooks.PreToolUse[0].hooks[0].type).toBe('command')
+      expect(settings.hooks.PreToolUse[0].hooks[0].command).toContain('pre-tool-use.mjs')
+    })
+
+    it('does not write settings when enableDecisionGating is false', () => {
+      setupFakeProcess([
+        '{"type":"result","subtype":"success","result":"ok"}',
+      ])
+      const runner = new ClaudeRunner(makeTestBrief(), {
+        workspace: tmpDir,
+        enableDecisionGating: false,
+      })
+      runner.start()
+
+      const sandboxDir = path.join(tmpDir, '.claude-agents')
+      expect(fs.existsSync(sandboxDir)).toBe(false)
+    })
+
+    it('defaults to enableDecisionGating true', () => {
+      setupFakeProcess([
+        '{"type":"result","subtype":"success","result":"ok"}',
+      ])
+      const brief = makeTestBrief('agent-default-1')
+      const runner = new ClaudeRunner(brief, {
+        workspace: tmpDir,
+      })
+      runner.start()
+
+      const sandboxSettings = path.join(tmpDir, '.claude-agents', 'agent-default-1', '.claude', 'settings.local.json')
+      expect(fs.existsSync(sandboxSettings)).toBe(true)
+    })
+
+    it('removes sandbox settings on kill', async () => {
+      setupFakeProcess([], 0, 200)
+      const brief = makeTestBrief('agent-kill-1')
+      const runner = new ClaudeRunner(brief, {
+        workspace: tmpDir,
+        enableDecisionGating: true,
+      })
+      runner.start()
+      await new Promise(r => setTimeout(r, 50))
+
+      const sandboxSettings = path.join(tmpDir, '.claude-agents', 'agent-kill-1', '.claude', 'settings.local.json')
+      expect(fs.existsSync(sandboxSettings)).toBe(true)
+
+      await runner.kill()
+
+      expect(fs.existsSync(sandboxSettings)).toBe(false)
+    })
+
+    it('removes sandbox settings on pause', async () => {
+      setupFakeProcess([], 0, 200)
+      const brief = makeTestBrief('agent-pause-1')
+      const runner = new ClaudeRunner(brief, {
+        workspace: tmpDir,
+        enableDecisionGating: true,
+      })
+      runner.start()
+      await new Promise(r => setTimeout(r, 50))
+
+      const sandboxSettings = path.join(tmpDir, '.claude-agents', 'agent-pause-1', '.claude', 'settings.local.json')
+      expect(fs.existsSync(sandboxSettings)).toBe(true)
+
+      await runner.pause()
+
+      expect(fs.existsSync(sandboxSettings)).toBe(false)
+    })
+
+    it('does not pollute workspace .claude directory', () => {
+      setupFakeProcess([
+        '{"type":"result","subtype":"success","result":"ok"}',
+      ])
+      const brief = makeTestBrief('agent-isolate-1')
+      const runner = new ClaudeRunner(brief, {
+        workspace: tmpDir,
+        enableDecisionGating: true,
+      })
+      runner.start()
+
+      // Workspace .claude dir should not exist (or not contain settings.local.json)
+      const workspaceClaudeDir = path.join(tmpDir, '.claude')
+      if (fs.existsSync(workspaceClaudeDir)) {
+        const files = fs.readdirSync(workspaceClaudeDir)
+        expect(files).not.toContain('settings.local.json')
+      }
+    })
+
+    it('builds hook matcher from escalation protocol', () => {
+      setupFakeProcess([])
+      const brief = makeTestBrief()
+      brief.escalationProtocol.neverEscalate = ['Read', 'Glob']
+      brief.allowedTools = ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep']
+
+      const runner = new ClaudeRunner(brief, {
+        workspace: tmpDir,
+        enableDecisionGating: true,
+      })
+
+      // Access the internal method for testing
+      const matcher = (runner as any)._buildHookMatcher()
+      expect(matcher).toBe('Write|Edit|Bash|Grep')
+      expect(matcher).not.toContain('Read')
+      expect(matcher).not.toContain('Glob')
+    })
+
+    it('uses default tools when allowedTools is undefined', () => {
+      setupFakeProcess([])
+      const brief = makeTestBrief()
+      brief.allowedTools = undefined as any
+      brief.escalationProtocol.neverEscalate = []
+
+      const runner = new ClaudeRunner(brief, {
+        workspace: tmpDir,
+        enableDecisionGating: true,
+      })
+
+      const matcher = (runner as any)._buildHookMatcher()
+      expect(matcher).toBe('Read|Write|Edit|Bash|Glob|Grep')
+    })
   })
 })
