@@ -45,7 +45,32 @@ The system tracks 8 artifact kinds. The `isEmbeddable()` function in the coheren
 | `data` | Conditional | Only if explicitly `text/*` |
 | `design` | No | Always excluded (images, wireframes) |
 
-### 2.2 File Size Distribution
+### 2.2 Artifact Characteristics by Kind
+
+The project-tab codebase is code-heavy, but the system is designed for arbitrary organizations running arbitrary projects. Different artifact kinds have fundamentally different size profiles, semantic structures, and embedding behaviors.
+
+| Kind | Typical Token Range | Semantic Structure | Duplication Pattern | Embedding Effectiveness |
+|------|--------------------:|-------------------|---------------------|:-----------------------:|
+| `code` (small module) | 100--500 | Dense, function-centric | Exact function copies, shared utilities | Good |
+| `code` (large module) | 500--5,000 | Many functions, mixed concerns | Buried function-level overlap | Poor (dilution) |
+| `config` | 50--500 | Key-value, declarative | Drift between environments/workstreams | Good |
+| `test` | 200--5,000 | Repetitive structure, high boilerplate | Overlapping test coverage | Moderate (noisy) |
+| `document` | 1,000--20,000+ | Narrative, thematic | Thematic overlap, repeated conclusions | **Good** (theme permeates vector) |
+| `research` | 1,000--10,000 | Dense domain terminology, citations | Independent discovery of same findings | **Good** (high signal-to-noise) |
+| `decision_record` | 100--500 | Structured, rationale-focused | Contradictory or redundant decisions | **Good** (short, semantically dense) |
+| `data` | Variable (100--100,000+) | Tabular, repetitive, low semantic content | Overlapping datasets | **Poor** (embeddings capture format, not meaning) |
+| `design` | N/A | Visual (excluded from embedding) | N/A | N/A |
+
+**Key insight:** The analysis in section 2.3 below is based on this project's TypeScript/Python source files. In production, the artifact mix will vary dramatically by organization:
+
+- A **consulting firm** (Sam's scenario) produces mostly `document` and `decision_record` artifacts -- short, semantically dense, well-suited to whole-file embedding
+- A **research lab** (Rosa's scenario) produces `research` and `data` artifacts -- research docs embed well, but data artifacts need content-hash or schema-level comparison instead
+- A **SaaS team** (David's scenario) produces `code`, `config`, and `test` artifacts -- the most susceptible to the dilution problem
+- A **content studio** (Maya's scenario) produces `document` and `research` -- often long-form, where context window becomes the binding constraint
+
+The context window and granularity recommendations in this report must account for document-heavy organizations where artifacts routinely exceed 8K tokens, not just the code-file profile of this codebase.
+
+### 2.3 File Size Distribution (This Codebase)
 
 Analysis of the 238 embeddable source files (`.ts`, `.tsx`, `.py`) in the project-tab codebase:
 
@@ -62,7 +87,7 @@ Analysis of the 238 embeddable source files (`.ts`, `.tsx`, `.py`) in the projec
 
 The remaining 8.4% (20 files) range from 583 to 1,513 lines (~1,940--13,530 tokens). One outlier, `scenarios.ts`, reaches ~19,490 tokens due to dense data literals.
 
-### 2.3 Largest Files and Token Estimates
+### 2.4 Largest Files and Token Estimates
 
 | Lines | ~Tokens | Path | Type |
 |------:|--------:|------|------|
@@ -76,7 +101,7 @@ The remaining 8.4% (20 files) range from 583 to 1,513 lines (~1,940--13,530 toke
 
 Key observation: **12 of the 15 largest files are test files.** In a production deployment where agents produce artifacts, agent-produced code files will typically be smaller than the project's own test suite. The mock scenarios simulate artifacts of 1--10 KB (code) to 50--200 KB (documents).
 
-### 2.4 Function/Class Density (Dilution Risk Indicator)
+### 2.5 Function/Class Density (Dilution Risk Indicator)
 
 Files with high function density are most vulnerable to embedding dilution -- a duplicated function's signal gets drowned out by the file's other contents.
 
@@ -92,7 +117,7 @@ Files with high function density are most vulnerable to embedding dilution -- a 
 
 For the production source files (`knowledge-store.ts`, `reducer.ts`), each function averages ~18 lines. A duplicated 18-line function in a 977-line file contributes ~1.8% of the embedding signal. At that ratio, even identical functions would not push cosine similarity above the 0.70 advisory threshold when the surrounding code diverges.
 
-### 2.5 Mock Scenario Artifact Volumes
+### 2.6 Mock Scenario Artifact Volumes
 
 | Scenario | Artifacts | Workstreams | Artifacts/Workstream | Primary Kinds |
 |----------|:---------:|:-----------:|:--------------------:|---------------|
@@ -129,11 +154,24 @@ Total cross-workstream pairs in a typical scenario: 5--15. This is a small compa
 | 32K tokens (Voyage) | 238 of 238 | 100% |
 | 128K tokens (Cohere) | 238 of 238 | 100% |
 
-**Gemini's 2K context is disqualifying for this use case.** 18% of the codebase's own files exceed it, and agent-produced documents (research reports, design specs) will routinely exceed 2K tokens. Chunking adds complexity and degrades whole-file similarity comparisons.
+**Gemini's 2K context is disqualifying for this use case.** 18% of this codebase's own files exceed it, and agent-produced documents (research reports, design specs) will routinely exceed 2K tokens. Chunking adds complexity and degrades whole-file similarity comparisons.
 
-OpenAI's 8K context covers 97.9% of files. The 5 files that exceed it are all large test suites (>9K tokens) -- these are unlikely to be agent-produced artifacts in production, so 8K is likely sufficient.
+OpenAI's 8K context covers 97.9% of *this codebase's* files. However, this codebase is code-heavy with a median of ~575 tokens per file. **Document-heavy organizations tell a different story:**
 
-Voyage's 32K context provides full coverage with substantial headroom for large documents.
+| Artifact Kind | Typical Token Range | Fits in 2K? | Fits in 8K? | Fits in 32K? |
+|---------------|--------------------:|:-----------:|:-----------:|:------------:|
+| `code` (small) | 100--500 | Yes | Yes | Yes |
+| `code` (large) | 500--5,000 | Often no | Usually | Yes |
+| `config` | 50--500 | Yes | Yes | Yes |
+| `decision_record` | 100--500 | Yes | Yes | Yes |
+| `research` | 1,000--10,000 | Rarely | Often | Yes |
+| `document` (short) | 1,000--5,000 | Rarely | Usually | Yes |
+| `document` (long) | 5,000--20,000+ | No | Often no | Usually |
+| `data` (text) | 100--100,000+ | Varies | Varies | Varies |
+
+For a consulting firm producing 10-page research reports or a content studio generating long-form documents, **8K is not sufficient** -- these artifacts routinely hit 10K--20K tokens. The 32K window becomes necessary, not just nice-to-have.
+
+Voyage's 32K context provides coverage for all realistic artifacts across organization types. Cohere's 128K provides further headroom for data-heavy use cases, though embeddings of raw data have limited semantic value regardless of context window.
 
 ### 3.3 Cost Projection
 
@@ -154,23 +192,37 @@ Based on the mock scenarios (3--7 artifacts per project, re-embedded on change):
 
 ## 4. The Granularity Problem
 
-### 4.1 What Whole-File Embedding Catches
+### 4.1 Effectiveness by Artifact Kind
 
-| Scenario | Similarity Signal | Detected? |
-|----------|:-----------------:|:---------:|
-| Two agents create near-identical files | Strong | Yes |
-| Similar small config files across workstreams | Strong | Yes |
-| Two small single-purpose modules with overlapping logic | Moderate-Strong | Yes |
-| Two research documents covering the same topic | Moderate | Likely |
+Whole-file embedding effectiveness varies dramatically by artifact type. The dilution problem is primarily a *code* problem -- other artifact kinds have different semantic structures that interact with embeddings differently.
 
-### 4.2 What Whole-File Embedding Misses
+| Kind | Embedding Effectiveness | Why |
+|------|:-----------------------:|-----|
+| `code` (small, <500 tok) | **Good** | File ≈ function-level granularity; high signal-to-noise |
+| `code` (large, >500 tok) | **Poor** | Many functions dilute per-function signal; 18-line function contributes ~1.8% in a 977-line file |
+| `config` | **Good** | Small, declarative, structurally similar when overlapping |
+| `test` | **Moderate** | High boilerplate ratio creates noise; test structure similarity ≠ tested-code similarity |
+| `document` | **Good** | Thematic duplication permeates the entire text; shared topic = shared vector direction |
+| `research` | **Good** | Dense domain terminology creates strong semantic fingerprints; independent discovery of same findings produces naturally similar vectors |
+| `decision_record` | **Good** | Short and semantically dense; overlapping or contradictory decisions share vocabulary |
+| `data` | **Poor** | Embedding captures format/structure, not data semantics; "CSV with 3 columns" ≠ meaningful similarity |
 
-| Scenario | Similarity Signal | Detected? |
-|----------|:-----------------:|:---------:|
-| Same utility function in two large, otherwise different files | Weak (~1-5% of signal) | **No** |
-| Same class reimplemented in different module contexts | Weak | **No** |
-| Copied helper buried in unrelated code | Minimal | **No** |
-| Same algorithm with different variable names in large files | Minimal | **No** |
+**The implication:** For organizations like consulting firms (Sam), content studios (Maya), and research labs (Rosa), whole-file embedding is actually well-suited to their primary artifact types. The dilution problem is concentrated in SaaS/engineering teams (David) producing large code files.
+
+### 4.2 Detection Matrix by Scenario and Artifact Kind
+
+| Scenario | Artifact Kind | Similarity Signal | Detected? |
+|----------|--------------|:-----------------:|:---------:|
+| Two agents write near-identical code files | `code` | Strong | Yes |
+| Two agents write the same utility function in large, different files | `code` | Weak (~1-5%) | **No** |
+| Same class reimplemented in different module contexts | `code` | Weak | **No** |
+| Two agents produce research reports reaching the same conclusion | `research` | **Strong** | Yes |
+| Two workstreams produce overlapping project documentation | `document` | **Moderate-Strong** | Yes |
+| Contradictory decisions made in parallel workstreams | `decision_record` | **Moderate** | Likely |
+| Config drift between workstream environments | `config` | **Strong** | Yes |
+| Two agents generate overlapping datasets | `data` | Weak (format, not content) | **No** |
+| Long research document with one duplicated section | `research` | Moderate (diluted by length) | Marginal |
+| Two short memos covering the same topic | `document` | **Strong** | Yes |
 
 ### 4.3 Dilution Math
 
@@ -189,15 +241,25 @@ Assuming the non-duplicated portions are orthogonal (uncorrelated), approximate 
 
 Files under ~200 tokens with >25% shared content will produce detectable signals. Larger files will not, unless the duplication is extensive.
 
-### 4.4 Does This Matter for the Project-Tab Use Case?
+### 4.4 Does This Matter? It Depends on the Organization
 
-**For the mock scenarios (3--7 artifacts, 3--4 workstreams): Minimally.**
+The severity of the granularity gap depends on the artifact mix, which varies by organization type:
 
-The artifact volumes are small enough that a human reviewing the queue can spot overlaps manually. Cross-workstream artifacts are sparse (1--2 per workstream), and the primary coherence concern is at the document/module level, not the function level.
+**Document-heavy organizations (consulting, content, research):**
 
-**For production scale (dozens of agents, hundreds of artifacts): Yes.**
+Whole-file embedding works well. Documents, research reports, and decision records are the primary artifacts, and their semantic structure aligns with how embeddings work -- thematic overlap produces naturally similar vectors. The main risk is long documents (>8K tokens) where a single duplicated section gets diluted by length, but this is a milder version of the code dilution problem since thematic language tends to repeat throughout a document.
 
-As agent count and artifact volume grow, function-level duplication becomes the dominant coherence risk. Multiple agents writing utility functions, API handlers, or data transformations in parallel will produce duplication at the function level that whole-file embedding cannot detect.
+**Code-heavy organizations (SaaS teams, engineering):**
+
+The granularity gap is a real concern at scale. Function-level duplication across workstreams is the dominant coherence risk, and whole-file embedding systematically misses it. At mock-scenario scale (3--7 artifacts, 3--4 workstreams) a human can spot overlaps manually. At production scale (dozens of agents, hundreds of code artifacts), the gap becomes material.
+
+**Mixed organizations (portfolio management, cross-functional teams):**
+
+The gap is artifact-kind-dependent. Code artifacts need granularity mitigation; document artifacts do not. The system could apply different strategies per artifact kind (see Section 5).
+
+**Data-heavy organizations (analytics, ML pipelines):**
+
+Embeddings are the wrong tool for `data` artifacts entirely. These need structural comparison (schema matching, column overlap detection) or content hashing, not semantic embedding. This is a gap in the current `isEmbeddable()` logic -- `data` artifacts with `text/*` MIME type will be embedded, but the resulting vectors carry minimal semantic value.
 
 ---
 
@@ -241,13 +303,33 @@ Accept that Layer 1 is a coarse filter. When the artifact content provider (3A-5
 - **Complexity**: None beyond completing 3A-5
 - **Limitation**: Chicken-and-egg -- the pairs most affected by dilution are exactly the pairs that fail to reach Layer 2
 
-### 5.5 Recommended Approach
+### 5.5 Option E: Kind-Aware Embedding Strategy
 
-**Phase 3A (near-term):** Implement whole-file embedding with the chosen model (Option D baseline). This matches the current architecture, unblocks Layer 1 and 2 with real models, and is sufficient for mock-scenario-scale usage.
+Apply different strategies per artifact kind, since the granularity problem is not uniform:
 
-**Phase 3A addendum:** Add `contentHash`-based exact deduplication (Option A) as a lightweight parallel check. The `content_hash` field already exists in the knowledge store schema but is not used for cross-artifact comparison.
+| Kind | Strategy | Rationale |
+|------|----------|-----------|
+| `code` (>300 lines) | Chunk at function/class boundaries + whole-file | Dilution makes whole-file insufficient |
+| `code` (<300 lines) | Whole-file | File ≈ function granularity; chunking adds no value |
+| `config` | Whole-file + content hash | Small files; hash catches exact drift |
+| `test` | Whole-file (lower priority) | Test overlap is less critical than source overlap |
+| `document` | Whole-file | Thematic overlap works well at file level |
+| `research` | Whole-file | Domain terminology creates strong semantic signal |
+| `decision_record` | Whole-file | Short, dense; ideal for whole-file embedding |
+| `data` | Content hash / schema comparison only | Embeddings carry minimal semantic value for tabular data |
 
-**Phase 3C (when scaling):** Introduce chunk-level embedding (Option B) behind a feature flag, gated on file size (e.g., >300 lines). The `EmbeddingService` interface does not need to change -- chunking is a pre-processing concern in the coherence monitor's `runLayer1Scan()`.
+- **Pro**: Targets mitigation effort where the problem actually exists
+- **Pro**: Avoids unnecessary chunking cost for artifact kinds that don't need it
+- **Con**: More complex logic in `runLayer1Scan()` -- needs kind-aware branching
+- **Integration point**: The `isEmbeddable()` function already switches on artifact kind; extend this to return a strategy enum rather than a boolean
+
+### 5.6 Recommended Approach
+
+**Phase 3A (near-term):** Implement whole-file embedding with the chosen model (Option D baseline). This matches the current architecture, unblocks Layer 1 and 2 with real models, and is sufficient for mock-scenario-scale usage. Works well for document-heavy organizations out of the box.
+
+**Phase 3A addendum:** Add `contentHash`-based exact deduplication (Option A) as a lightweight parallel check. The `content_hash` field already exists in the knowledge store schema but is not used for cross-artifact comparison. Also consider excluding `data` artifacts from embedding entirely (or flagging them for hash-only comparison), since embeddings provide minimal value for tabular/structured data.
+
+**Phase 3C (when scaling):** Introduce kind-aware embedding strategy (Option E) behind a feature flag. Chunk `code` artifacts at function boundaries when they exceed a size threshold (~300 lines). Keep whole-file embedding for `document`, `research`, and `decision_record` artifacts where it works well. The `EmbeddingService` interface does not need to change -- chunking and kind-awareness are pre-processing concerns in the coherence monitor's `runLayer1Scan()`.
 
 ---
 
@@ -287,9 +369,11 @@ Despite the best MTEB score (68.3), the 2K token context window is incompatible 
 
 | Decision | Recommendation | Rationale |
 |----------|---------------|-----------|
-| **Model** | `voyage-4-lite` (primary) or `text-embedding-3-small` (safe default) | 32K context avoids all chunking; same price as OpenAI small; better accuracy |
+| **Model** | `voyage-4-lite` (primary) or `text-embedding-3-small` (safe default) | 32K context handles long documents from any organization type; same price as OpenAI small; better accuracy |
 | **Dimensions** | 512 (via Matryoshka truncation) | Sufficient for cross-workstream similarity; 4x storage savings vs full dims |
-| **Granularity** | Whole-file for Phase 3A; chunk-level behind feature flag for Phase 3C | Matches current architecture; adequate at mock-scenario scale |
+| **Granularity** | Whole-file for Phase 3A; kind-aware chunking for Phase 3C | Whole-file works well for documents, research, decisions; only code artifacts need function-level chunking |
 | **Dedup gap** | Add content-hash cross-comparison using existing `content_hash` field | Zero embedding cost; catches exact function-level copies |
-| **Context window** | Not a bottleneck except for Gemini | 8K (OpenAI) or 32K (Voyage) covers all realistic artifacts |
+| **Data artifacts** | Exclude from embedding; use hash/schema comparison | Embeddings of tabular data carry minimal semantic value |
+| **Context window** | 32K strongly preferred over 8K | Document-heavy organizations routinely produce 10K--20K token artifacts; 8K is insufficient for consulting/content/research use cases |
+| **Gemini** | Not recommended despite best MTEB score | 2K context is disqualifying for whole-file embedding of any non-trivial artifact |
 | **Cost** | Negligible at current scale ($0.10--$0.75/month) | Not a differentiating factor |
