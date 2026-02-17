@@ -87,75 +87,126 @@ LLM costs are dropping ~10x per year. Counter-arguments:
 
 ---
 
-## 3. OpenAI Enterprise: File Search & Company Knowledge
+## 3. OpenAI Frontier: Enterprise Agent Platform Comparison
 
-### 3.1 What OpenAI Offers
+### 3.1 What Frontier Is
 
-OpenAI has three relevant products, none of which do coherence monitoring out of the box:
+[OpenAI Frontier](https://openai.com/index/introducing-openai-frontier/) (launched February 5, 2026) is an enterprise platform for building, deploying, and managing AI agents -- which OpenAI calls "AI coworkers." It's not a document scanning tool; it's an **agent operating system** built on four pillars:
 
-**File Search (Responses API):**
-- Upload documents to persistent vector stores (up to 10K files)
-- Hybrid retrieval: embedding similarity + keyword matching (reciprocal rank fusion)
-- Automatic chunking (~800 tokens, 400 overlap, configurable)
-- Pricing: $0.10/GB/day storage + $2.50/1K search calls
-- Architecture: `text-embedding-3-large` + Jaccard keyword similarity
+1. **Business Context** -- A semantic layer connecting enterprise data sources (CRMs, data warehouses, ticketing tools, internal apps) so all agents share a unified understanding of the organization
+2. **Agent Execution** -- An environment where agents reason, use tools, run code, and build memory from past interactions
+3. **Evaluation & Optimization** -- Performance tracking and feedback loops so agents improve over time
+4. **Enterprise Governance** -- IAM, agent identities, permission scoping, SOC 2 Type II / ISO 27001 compliance
 
-**Company Knowledge (ChatGPT Business/Enterprise):**
-- Connectors to Slack, SharePoint, Google Drive, GitHub, Teams, Outlook, etc.
-- Rebranded to "Apps" in December 2025
-- Included in $25--30/user/month plans
+Early adopters include HP, Intuit, Oracle, State Farm, Thermo Fisher, and Uber. Pricing is not public (enterprise sales only). Implementation requires OpenAI's Forward Deployed Engineers and can take months.
 
-**Deep Research with Connectors (February 2026):**
-- GPT-5.2 extended context for multi-source research
-- MCP-compatible connectors
-- Designed for one-shot analysis, not continuous monitoring
+### 3.2 The Business Context Semantic Layer
 
-### 3.2 How It Compares to Phase 3A
+This is the component most architecturally relevant to our Phase 3A work. It provides shared input context to all agents via:
 
-| Capability | OpenAI File Search | Our Phase 3A Design |
+- **RAG (Retrieval-Augmented Generation)**: Connectors pull data from enterprise systems at runtime, inject relevant information into agent prompts
+- **Embeddings + Vector Search**: Documents embedded with `text-embedding-3-large`, stored in vector databases, retrieved via cosine similarity
+- **MCP Connectors**: Model Context Protocol integrations for Slack, SharePoint, Google Drive, GitHub, etc.
+- **Possibly knowledge graph elements**: Not confirmed, but plausible given the need to understand entity relationships across systems
+
+**What the semantic layer does**: Gives agents consistent *input* context so they operate from the same information base.
+
+**What it does NOT do**: Compare agent *outputs* against each other for conflicts, contradictions, or duplication.
+
+### 3.3 Frontier's Coordination Engine
+
+Frontier includes a "Coordination Engine" that manages agent fleets. Based on available documentation, it handles:
+
+- **Task deduplication**: Preventing two agents from performing the same work
+- **Permission scoping**: Each agent has a unique identity with specific access rights
+- **Workflow orchestration**: Routing tasks to the right agent, managing parallel execution
+- **Audit logging**: All agent actions are logged and traceable
+
+**Critically, this operates at the task/permission/workflow level, not the content/semantic level.** It prevents two agents from being *assigned* the same work, but it does not detect when two agents independently produce *conflicting outputs* on different work.
+
+### 3.4 Frontier's Evaluation & Optimization
+
+The evaluation system is **outcome-based**:
+
+- Performance monitoring via built-in tracing (every LLM call, tool call, handoff)
+- Feedback loops: did the task succeed? Did the human approve?
+- Behavioral adjustment based on feedback (prompt tuning, routing changes)
+- Memory-based improvement: successful patterns reinforced over time
+
+**There is no documented evidence that Evaluation & Optimization performs:**
+- Cross-artifact conflict detection
+- Embedding-based similarity checking between agent outputs
+- Automated semantic consistency verification
+- Coherence monitoring of the kind our Layer 0/1/2 pipeline does
+
+### 3.5 Frontier's Memory System
+
+Four layers, relevant because memory architecture affects how conflicts could theoretically be caught:
+
+| Layer | Scope | Mechanism |
+|-------|-------|-----------|
+| Short-term | Single session | Conversation history |
+| Medium-term | Cross-session | Context compaction via Responses API |
+| Long-term | Per-agent | Embedding-based vector memory, similarity retrieval |
+| Institutional | Org-wide | The shared semantic layer (Business Context) |
+
+The long-term memory layer uses embeddings internally -- the same technique our Layer 1 uses, but applied to agent *experience* rather than agent *outputs*.
+
+### 3.6 Frontier vs. Phase 3A: The Fundamental Difference
+
+**Frontier provides shared context *inputs* to reduce the probability of conflicts. Our coherence pipeline compares agent *outputs* to detect conflicts that occur despite shared context.**
+
+These are complementary layers, not alternatives:
+
+| Dimension | OpenAI Frontier | Our CoherenceMonitor (Phase 3A) |
 |---|---|---|
-| **Vector similarity** | Built-in (hybrid) | Layer 1 (embedding-only, configurable model) |
-| **LLM verification** | Via prompting (manual) | Layer 2 (structured review service) |
-| **Cross-document conflict detection** | Not built-in | Core feature (cross-workstream comparison) |
-| **Ongoing monitoring** | Possible via API (DIY) | Built-in (periodic scan every N ticks) |
-| **Chunking** | Automatic (800 tok, 400 overlap) | Whole-file (no chunking in Phase 3A) |
-| **Duplication detection** | Not a feature | Core feature (Layer 0 structural + Layer 1 semantic) |
-| **Explanation of issues** | Not built-in | Layer 2 provides category, severity, explanation, resolution |
-| **Cost per scan** | ~$0.01--0.05 (embedding + retrieval) | ~$0.01--0.05 (embedding + focused LLM review) |
+| **Goal** | Prevent conflicts by aligning agent inputs | Detect conflicts by comparing agent outputs |
+| **When** | Pre-execution (shared context) + post-execution (outcome eval) | Post-production (after artifacts are generated) |
+| **Conflict detection** | Task-level deduplication (Coordination Engine) | Semantic content comparison (embedding + LLM) |
+| **Cross-agent output comparison** | **Not documented** | **Core function** |
+| **Architecture** | RAG + connectors + vector search + orchestration | Layer 0 structural + Layer 1 embedding + Layer 2 LLM |
+| **Detection granularity** | Coarse (task/workflow) | Fine-grained (artifact content, function-level) |
+| **Structured output** | Traces and performance metrics | Category, severity, explanation, suggested resolution |
+| **Cost** | Enterprise pricing (likely 6-7 figures/year) | ~$0.01--$5/scan depending on approach |
+| **Implementation** | Months, requires OpenAI FDEs | Days to weeks for basic pipeline |
+| **Vendor lock-in** | High (despite "open" claims) | Low (swappable models, stores) |
 
-### 3.3 Key Differences
+### 3.7 What Frontier Does That We Should Consider Adopting
 
-**OpenAI File Search is a retrieval tool, not a monitoring tool.** It answers "find documents relevant to this query" -- it doesn't answer "which of these documents conflict with each other?" That's an N² comparison problem that retrieval architectures aren't designed for.
+| Frontier Feature | Relevance to Phase 3A |
+|---|---|
+| **Shared semantic layer** | Our `ContextInjectionService` (3A-1) is the equivalent -- pushing shared context to agents. Frontier validates this architectural choice. |
+| **Hybrid retrieval** (embedding + keyword) | Our Layer 1 is embedding-only. Adding keyword/lexical matching (like BM25 or Jaccard) could catch conflicts that embeddings miss when there's exact string overlap. |
+| **Multi-layer memory** | Our knowledge store already has artifact provenance and audit logs. The pattern of promoting short-term observations to long-term memory aligns with how we could track recurring coherence patterns. |
+| **Automatic chunking** (~800 tokens, 400 overlap) | We have no chunking in Phase 3A. Frontier's chunking parameters are a reasonable starting point for Phase 3C. |
+| **Built-in tracing** | Our event bus and audit log serve a similar function, but structured observability traces would improve debugging. |
 
-Our coherence monitor is purpose-built for the comparison problem:
-- Layer 0: Structural conflict (same file path, different agents) -- OpenAI has no equivalent
-- Layer 1: All-pairs cross-workstream embedding comparison -- File Search does single-query retrieval
-- Layer 2: LLM review with structured output (category, severity, resolution) -- File Search returns chunks, not judgments
+### 3.8 What We Do That Frontier Doesn't
 
-**What OpenAI does better:**
-- Automatic chunking with configurable overlap (we have none in Phase 3A)
-- Hybrid keyword + semantic search (we're semantic-only)
-- Massive scale (10K files, enterprise infrastructure)
+| Our Capability | Frontier Equivalent |
+|---|---|
+| **Layer 0**: Structural file-path conflict detection | None |
+| **Layer 1**: All-pairs cross-workstream embedding comparison | None (semantic layer is for retrieval, not comparison) |
+| **Layer 2**: LLM review with structured coherence output | None (evaluation is outcome-based, not content-based) |
+| **Workstream-aware pair filtering** | None (Coordination Engine works at task level) |
+| **Severity/category classification of issues** | None |
+| **Suggested resolution generation** | None |
 
-**What we do that OpenAI doesn't:**
-- Continuous monitoring with periodic scans
-- Cross-document conflict detection (not just retrieval)
-- Structured coherence output (categories, severity, suggested resolution)
-- Workstream-aware comparison (same-workstream pairs excluded by design)
-- Three-layer architecture (structural → semantic → LLM judgment)
+### 3.9 Competitive Landscape (Updated)
 
-### 3.4 Competitive Landscape
+| Vendor | Product | Shared Context? | Output Coherence Checking? | Architecture |
+|--------|---------|:---:|:---:|---|
+| **OpenAI** | Frontier | **Yes** (semantic layer) | No | RAG + connectors + Coordination Engine |
+| **Microsoft** | Copilot 365 / Agent 365 | **Yes** (Graph-grounded) | No | Semantic search + agent fleet observability |
+| **Google** | NotebookLM / Vertex AI | Partial | No | Gemini + document ingestion |
+| **Anthropic** | Claude Connectors / Cowork | Partial (MCP) | No | MCP-based data access, long context |
+| **Cohere** | Compass / North | **Yes** (Embed + Rerank) | No | Embed + Rerank pipeline |
+| **Salesforce** | Agentforce | **Yes** (Data Cloud) | No | Governed data + agent actions |
+| **Us** | CoherenceMonitor | Via ContextInjectionService | **Yes** | Layer 0/1/2 structured pipeline |
 
-| Vendor | Product | Built-in Conflict Detection? | Architecture |
-|--------|---------|:---:|---|
-| **OpenAI** | File Search / Company Knowledge | No | Hybrid embedding + keyword |
-| **Microsoft** | Copilot 365 | No | Graph-grounded semantic search |
-| **Google** | NotebookLM / Vertex AI | No | Gemini + document ingestion |
-| **Anthropic** | Claude Connectors (MCP) | No | MCP-based data access, long context |
-| **Cohere** | Compass / North | No | Embed + Rerank pipeline |
-| **Us** | CoherenceMonitor | **Yes** | Layer 0/1/2 structured pipeline |
+**No vendor -- including Frontier -- offers output-level coherence monitoring.** Every platform focuses on giving agents the right inputs. None systematically verify that outputs are consistent. This remains a differentiating capability.
 
-**No vendor offers built-in coherence monitoring.** This is a differentiating capability. The question isn't whether to replace our approach with an off-the-shelf product (none exists), but whether to adopt specific techniques from these platforms (e.g., OpenAI's hybrid retrieval, Cohere's reranking).
+The strongest framing: **Frontier is the infrastructure layer (shared context, execution, governance). Coherence monitoring is the quality assurance layer (output verification). One does not replace the other -- a complete system needs both.**
 
 ---
 
@@ -611,11 +662,19 @@ Create `server/test/experiments/` with:
 - [Pinecone "Less is More"](https://www.pinecone.io/blog/why-use-retrieval-instead-of-larger-context/)
 - [RAGFlow 2025 Year-End Review](https://ragflow.io/blog/rag-review-2025-from-rag-to-context)
 
-### Product Documentation
-- [OpenAI File Search Guide](https://platform.openai.com/docs/guides/tools-file-search)
-- [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses)
-- [OpenAI Company Knowledge](https://openai.com/index/introducing-company-knowledge/)
-- [OpenAI Deep Research Update (Feb 2026)](https://blockchain.news/ainews/openai-deep-research-update-app-connections-site-specific-search-real-time-progress-and-fullscreen-reports-2026-analysis)
+### OpenAI Frontier
+- [Introducing OpenAI Frontier](https://openai.com/index/introducing-openai-frontier/)
+- [OpenAI Frontier Product Page](https://openai.com/business/frontier/)
+- [OpenAI launches new enterprise platform (CNBC)](https://www.cnbc.com/2026/02/05/open-ai-frontier-enterprise-customers.html)
+- [OpenAI launches Frontier (TechCrunch)](https://techcrunch.com/2026/02/05/openai-launches-a-way-for-enterprises-to-build-and-manage-ai-agents/)
+- [OpenAI Frontier: Complete Guide (ALM Corp)](https://almcorp.com/blog/openai-frontier-enterprise-ai-agent-platform-guide/)
+- [An honest OpenAI Frontier review (eesel.ai)](https://www.eesel.ai/blog/openai-frontier-review)
+- [OpenAI Frontier: Enterprise AI Agent Platform Guide (NxCode)](https://www.nxcode.io/resources/news/openai-frontier-enterprise-ai-agent-platform-guide-2026)
+- [OpenAI Frontier reshapes enterprise software (Fortune)](https://fortune.com/2026/02/05/openai-frontier-ai-agent-platform-enterprises-challenges-saas-salesforce-workday/)
+
+### Other Product Documentation
 - [Google Gemini Long Context Docs](https://ai.google.dev/gemini-api/docs/long-context)
 - [Claude Connectors](https://claude.com/connectors)
 - [Cohere Embed v4](https://cohere.com/embed)
+- [OpenAI Agents SDK: Multi-Agent Orchestration](https://openai.github.io/openai-agents-python/multi_agent/)
+- [OpenAI Agents SDK: Sessions & Memory](https://openai.github.io/openai-agents-python/sessions/)
