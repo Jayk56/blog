@@ -267,6 +267,7 @@ const mayaState: ProjectState = {
 **System note:** A minor terminology inconsistency was detected between Posts 1 and 3 — "market segment" vs. "vertical" for the same concept.`,
   activeScenarioId: 'maya',
   autoSimulate: false,
+  viewingTick: null,
 };
 
 
@@ -370,6 +371,56 @@ const davidDecisions: DecisionItem[] = [
     resolved: false,
     resolution: null,
   },
+  {
+    id: 'david-d4',
+    title: 'Agent requests: Run database migration script',
+    summary: 'The database agent is requesting permission to execute a SQL migration script that creates the notification tables and indexes required by the WebSocket handler.',
+    subtype: 'tool_approval',
+    type: 'risk',
+    severity: 'high',
+    confidence: 0.88,
+    blastRadius: { artifactCount: 1, workstreamCount: 2, agentCount: 2, magnitude: 'large' },
+    toolArgs: { command: 'psql -f migrations/migrate_notifications.sql', description: 'Execute notification table migration' },
+    reasoning: 'All schema validation checks passed. The notifications table and indexes need to be created before the backend WebSocket handler can store delivery receipts.',
+    options: [
+      { id: 'david-d4-o1', label: 'Approve Migration', description: 'Allow the agent to execute the migration script', consequence: 'Notification tables and indexes will be created, unblocking the WebSocket handler', recommended: true, actionKind: 'approve' },
+      { id: 'david-d4-o2', label: 'Hold for Manual Review', description: 'Block execution and review the migration script manually', consequence: 'WebSocket handler remains blocked until migration is manually reviewed and executed', recommended: false, actionKind: 'reject' },
+    ],
+    affectedArtifactIds: ['david-a1'],
+    relatedWorkstreamIds: ['ws-db', 'ws-integration'],
+    sourceAgentId: 'david-db',
+    attentionScore: 80,
+    requiresRationale: false,
+    createdAtTick: 14,
+    dueByTick: 16,
+    resolved: false,
+    resolution: null,
+  },
+  {
+    id: 'david-d5',
+    title: 'Agent requests: Write WebSocket config file',
+    summary: 'The backend agent wants to create a centralized WebSocket configuration file to consolidate scattered inline config objects.',
+    subtype: 'tool_approval',
+    type: 'architectural',
+    severity: 'medium',
+    confidence: 0.92,
+    blastRadius: { artifactCount: 3, workstreamCount: 1, agentCount: 1, magnitude: 'medium' },
+    toolArgs: { file_path: 'src/config/websocket.ts', content: 'export const WS_CONFIG = { reconnectBackoff: { initialMs: 1000, maxMs: 30000, jitterFactor: 0.3 }, heartbeatIntervalMs: 15000, maxReconnectAttempts: 10 }' },
+    reasoning: 'Creating a centralized WebSocket configuration file to replace the three separate inline config objects found across notification-handler.ts, ws-client.ts, and reconnect.ts.',
+    options: [
+      { id: 'david-d5-o1', label: 'Approve Write', description: 'Allow the agent to create the config file', consequence: 'Config is centralized, three files will need updating to import from the new location', recommended: true, actionKind: 'approve' },
+      { id: 'david-d5-o2', label: 'Reject', description: 'Deny the file creation', consequence: 'Inline configs remain scattered across three files', recommended: false, actionKind: 'reject' },
+    ],
+    affectedArtifactIds: ['david-a2', 'david-a3', 'david-a5'],
+    relatedWorkstreamIds: ['ws-backend'],
+    sourceAgentId: 'david-backend',
+    attentionScore: 58,
+    requiresRationale: false,
+    createdAtTick: 14,
+    dueByTick: null,
+    resolved: false,
+    resolution: null,
+  },
 ];
 
 const davidCoherenceIssues: CoherenceIssue[] = [
@@ -430,6 +481,8 @@ const davidTimeline: TimelineEvent[] = [
   { id: 'david-e6', tick: 12, source: 'agent', agentId: 'david-test', category: 'decision_created', severity: 'high', title: 'WebSocket reconnection vulnerability', description: 'Testing revealed connection storms with fixed-interval reconnection.', relatedArtifactIds: ['david-a2'], relatedDecisionIds: ['david-d2'], relatedCoherenceIssueIds: [] },
   { id: 'david-e7', tick: 13, source: 'agent', agentId: 'david-review', category: 'coherence_detected', severity: 'high', title: 'API response format mismatch', description: 'New notification preferences API uses nested format; existing user prefs use flat format.', relatedArtifactIds: ['david-a3', 'david-a5'], relatedDecisionIds: ['david-d1'], relatedCoherenceIssueIds: ['david-ci1'] },
   { id: 'david-e8', tick: 13, source: 'system', agentId: null, category: 'phase_changed', severity: 'info', title: 'Entered Integration phase', description: 'Backend and frontend workstreams merging. Coherence review in progress.', relatedArtifactIds: [], relatedDecisionIds: [], relatedCoherenceIssueIds: [] },
+  { id: 'david-e9', tick: 14, source: 'agent', agentId: 'david-db', category: 'decision_created', severity: 'high', title: 'Database agent requests migration execution', description: 'Database agent is requesting approval to run the notification table migration script.', relatedArtifactIds: ['david-a1'], relatedDecisionIds: ['david-d4'], relatedCoherenceIssueIds: [] },
+  { id: 'david-e10', tick: 14, source: 'agent', agentId: 'david-backend', category: 'decision_created', severity: 'medium', title: 'Backend agent requests config file creation', description: 'Backend agent wants to create a centralized WebSocket configuration file.', relatedArtifactIds: ['david-a2'], relatedDecisionIds: ['david-d5'], relatedCoherenceIssueIds: [] },
 ];
 
 const davidDecisionLog: DecisionLogEntry[] = [
@@ -467,7 +520,7 @@ const davidState: ProjectState = {
     coherenceScore: 74,
     coherenceTrend: 'declining',
     reworkRisk: 22,
-    pendingDecisionCount: 3,
+    pendingDecisionCount: 5,
     openCoherenceIssueCount: 1,
     humanInterventionRate: 45,
     highSeverityMissRate: 0,
@@ -492,6 +545,7 @@ The notification system is entering the **integration phase**. Backend services 
 **System recommendation:** Your rework rate is low (8%) and test pass rates are high (91%). The system suggests considering adaptive mode to improve throughput on low-risk tasks.`,
   activeScenarioId: 'david',
   autoSimulate: false,
+  viewingTick: null,
 };
 
 
@@ -662,6 +716,7 @@ Team B's authentication redesign is in **execution phase** after the security ag
 **Coherence alert:** Team A and Team B are diverging on auth token strategy (JWT vs. opaque tokens). This needs cross-team alignment before both implementations ship.`,
   activeScenarioId: 'priya',
   autoSimulate: false,
+  viewingTick: null,
 };
 
 
@@ -809,6 +864,7 @@ All three pathway analyses are **complete**. The literature agent processed 50 p
 The knowledge graph is now generated and available in the Map workspace for exploration.`,
   activeScenarioId: 'rosa',
   autoSimulate: false,
+  viewingTick: null,
 };
 
 
@@ -954,6 +1010,7 @@ Assessment phase is **complete**. The architecture agent has audited the existin
 **Note:** Client isolation is active. No data or context from other client projects is accessible to agents working on this engagement.`,
   activeScenarioId: 'sam',
   autoSimulate: false,
+  viewingTick: null,
 };
 
 

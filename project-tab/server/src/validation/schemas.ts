@@ -568,6 +568,13 @@ export const draftBriefRequestSchema = z.object({
   additionalTools: z.array(z.string()).optional()
 })
 
+export const projectPatchSchema = z.object({
+  title: z.string().optional(),
+  description: z.string().optional(),
+  goals: z.array(z.string()).optional(),
+  constraints: z.array(z.string()).optional(),
+})
+
 /**
  * Validates an unknown payload as an AdapterEvent.
  */

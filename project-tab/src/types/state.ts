@@ -69,6 +69,14 @@ export interface ProjectState {
    * Whether the simulation is auto-advancing ticks.
    */
   autoSimulate: boolean;
+
+  /**
+   * The tick being viewed for temporal navigation.
+   * null = live (show up to currentTick).
+   * When set to a number, all workspaces filter data to show
+   * only what existed at or before this tick.
+   */
+  viewingTick: number | null;
 }
 
 // ── Reducer Actions ────────────────────────────────────────────────
@@ -176,6 +184,37 @@ export interface ToggleAutoSimulateAction {
   type: 'toggle-auto-simulate';
 }
 
+/** Set the viewing tick for temporal navigation. null = live. */
+export interface SetViewingTickAction {
+  type: 'set-viewing-tick';
+  tick: number | null;
+}
+
+/** Update the project description text. */
+export interface UpdateDescriptionAction {
+  type: 'update-description';
+  description: string;
+}
+
+/** Replace the full goals array. */
+export interface UpdateGoalsAction {
+  type: 'update-goals';
+  goals: string[];
+}
+
+/** Remove a constraint by index. */
+export interface RemoveConstraintAction {
+  type: 'remove-constraint';
+  index: number;
+}
+
+/** Edit a constraint in-place by index. */
+export interface EditConstraintAction {
+  type: 'edit-constraint';
+  index: number;
+  value: string;
+}
+
 // ── Server-pushed actions ─────────────────────────────────────────
 
 /** Full state sync from backend on connect/reconnect. */
@@ -238,6 +277,11 @@ export type ProjectAction =
   | AcceptRecommendationAction
   | RejectRecommendationAction
   | ToggleAutoSimulateAction
+  | SetViewingTickAction
+  | UpdateDescriptionAction
+  | UpdateGoalsAction
+  | RemoveConstraintAction
+  | EditConstraintAction
   | ServerStateSyncAction
   | ServerEventAction
   | ServerTrustUpdateAction

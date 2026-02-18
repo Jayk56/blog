@@ -87,6 +87,14 @@ export interface ApiClient {
   engageBrake(action: Omit<ServerBrakeAction, 'timestamp'>): Promise<{ brakeApplied: boolean; behavior: string; affectedAgentIds: string[] }>;
   releaseBrake(): Promise<{ released: boolean; resumedAgentIds: string[]; failedAgentIds: string[] }>;
 
+  // Project
+  updateProject(changes: {
+    title?: string;
+    description?: string;
+    goals?: string[];
+    constraints?: string[];
+  }): Promise<{ updated: boolean }>;
+
   // Snapshot (convenience — fetches full state via health + agents + trust)
   getSnapshot(): Promise<ServerKnowledgeSnapshot>;
 }
@@ -271,6 +279,14 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       return request(baseUrl, '/brake/release', {
         method: 'POST',
         body: JSON.stringify({}),
+      });
+    },
+
+    // ── Project ─────────────────────────────────────────────
+    async updateProject(changes) {
+      return request(baseUrl, '/project', {
+        method: 'PATCH',
+        body: JSON.stringify(changes),
       });
     },
 

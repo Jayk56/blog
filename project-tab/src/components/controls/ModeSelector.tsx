@@ -8,7 +8,7 @@
 import { Check, X } from 'lucide-react'
 import type { ControlMode } from '../../types/index.js'
 import type { ModeShiftRecommendation } from '../../types/index.js'
-import { useProjectDispatch, useApi } from '../../lib/context.js'
+import { useProjectDispatch, useProjectState, useApi } from '../../lib/context.js'
 
 interface ModeSelectorProps {
   currentMode: ControlMode
@@ -34,6 +34,8 @@ const modes: ControlMode[] = ['orchestrator', 'adaptive', 'ecosystem']
 
 export default function ModeSelector({ currentMode, recommendations }: ModeSelectorProps) {
   const dispatch = useProjectDispatch()
+  const state = useProjectState()
+  const isHistorical = state.viewingTick !== null
   const api = useApi()
   const pending = recommendations.filter(r => r.status === 'pending')
 
@@ -42,6 +44,10 @@ export default function ModeSelector({ currentMode, recommendations }: ModeSelec
       <h2 className="text-sm font-medium text-text-muted uppercase tracking-wider">
         Control Mode
       </h2>
+
+      {isHistorical && (
+        <p className="text-[11px] text-text-muted">Viewing historical state — actions disabled</p>
+      )}
 
       <div className="space-y-2">
         {modes.map((mode) => {
@@ -56,7 +62,8 @@ export default function ModeSelector({ currentMode, recommendations }: ModeSelec
                   dispatch({ type: 'set-mode', mode: currentMode })
                 })
               }}
-              className={`w-full text-left p-3 rounded-lg border transition-colors ${
+              disabled={isHistorical}
+              className={`w-full text-left p-3 rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                 isActive
                   ? 'bg-accent/10 border-accent/30 text-text-primary'
                   : 'bg-surface-1 border-border hover:border-border-light text-text-secondary'
@@ -89,13 +96,15 @@ export default function ModeSelector({ currentMode, recommendations }: ModeSelec
           <div className="flex gap-2">
             <button
               onClick={() => dispatch({ type: 'accept-recommendation', recommendationId: rec.id })}
-              className="flex items-center gap-1 px-2.5 py-1 text-xs bg-info/10 text-info rounded hover:bg-info/20 transition-colors"
+              disabled={isHistorical}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs bg-info/10 text-info rounded hover:bg-info/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Check size={12} /> Accept
             </button>
             <button
               onClick={() => dispatch({ type: 'reject-recommendation', recommendationId: rec.id })}
-              className="flex items-center gap-1 px-2.5 py-1 text-xs text-text-muted rounded hover:bg-surface-2 transition-colors"
+              disabled={isHistorical}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs text-text-muted rounded hover:bg-surface-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <X size={12} /> Dismiss
             </button>

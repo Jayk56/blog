@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import BriefEditorWorkspace from './BriefEditorWorkspace'
@@ -87,24 +87,27 @@ describe('BriefEditorWorkspace', () => {
 
   it('shows Add button for constraints', () => {
     renderWithContext(mayaState)
-    expect(screen.getByText('Add')).toBeInTheDocument()
+    const section = screen.getByText('Constraints').closest('section')!
+    expect(within(section).getByText('Add')).toBeInTheDocument()
   })
 
   it('shows add constraint form when Add is clicked', async () => {
     const user = userEvent.setup()
     renderWithContext(mayaState)
-    await user.click(screen.getByText('Add'))
+    const section = screen.getByText('Constraints').closest('section')!
+    await user.click(within(section).getByText('Add'))
     expect(screen.getByPlaceholderText(/date-fns/)).toBeInTheDocument()
   })
 
   it('dispatches inject-context when a new constraint is added', async () => {
     const user = userEvent.setup()
     const { dispatch } = renderWithContext(mayaState)
-    await user.click(screen.getByText('Add'))
+    const section = screen.getByText('Constraints').closest('section')!
+    await user.click(within(section).getByText('Add'))
     const input = screen.getByPlaceholderText(/date-fns/)
     await user.type(input, 'No external API calls without approval')
     // Click the Add button in the form (not the section header Add)
-    const addButtons = screen.getAllByText('Add')
+    const addButtons = within(section).getAllByText('Add')
     const formAdd = addButtons[addButtons.length - 1]
     await user.click(formAdd)
     expect(dispatch).toHaveBeenCalledWith({
@@ -116,7 +119,8 @@ describe('BriefEditorWorkspace', () => {
   it('hides add form when Cancel is clicked', async () => {
     const user = userEvent.setup()
     renderWithContext(mayaState)
-    await user.click(screen.getByText('Add'))
+    const section = screen.getByText('Constraints').closest('section')!
+    await user.click(within(section).getByText('Add'))
     expect(screen.getByPlaceholderText(/date-fns/)).toBeInTheDocument()
     await user.click(screen.getByText('Cancel'))
     expect(screen.queryByPlaceholderText(/date-fns/)).not.toBeInTheDocument()
@@ -204,5 +208,158 @@ describe('BriefEditorWorkspace', () => {
     renderWithContext(samState)
     expect(screen.getByText(/Client D data must never/)).toBeInTheDocument()
     expect(screen.getByText(/existing Kafka infrastructure/)).toBeInTheDocument()
+  })
+
+  // ── Goal editing index adjustment ────────────────────────────
+
+  it('deleting goal above the edited one shifts the edit index down', async () => {
+    const user = userEvent.setup()
+    renderWithContext(mayaState)
+    // maya goals: [0] "Deliver four...", [1] "Maintain consistent...", [2] "Achieve SEO..."
+    // Start editing goal at index 2 (last one)
+    const editButtons = screen.getAllByTitle('Edit goal')
+    await user.click(editButtons[2])
+
+    // The input should be pre-filled with goal 2's text
+    const goalInput = screen.getByDisplayValue(/Achieve SEO/)
+    expect(goalInput).toBeInTheDocument()
+
+    // Now delete goal at index 0 (above the one being edited)
+    const removeButtons = screen.getAllByTitle('Remove goal')
+    await user.click(removeButtons[0])
+
+    // The editor should still be visible and now contain the same goal text
+    // (goal 2 is now at index 1 after deletion)
+    expect(screen.getByDisplayValue(/Achieve SEO/)).toBeInTheDocument()
+  })
+
+  it('deleting goal below the edited one does not change the edit index', async () => {
+    const user = userEvent.setup()
+    renderWithContext(mayaState)
+    // maya goals: [0] "Deliver four...", [1] "Maintain consistent...", [2] "Achieve SEO..."
+    // Start editing goal at index 0
+    const editButtons = screen.getAllByTitle('Edit goal')
+    await user.click(editButtons[0])
+
+    expect(screen.getByDisplayValue(/Deliver four/)).toBeInTheDocument()
+
+    // Delete goal at index 1 (below the one being edited)
+    // Note: while editing goal 0, only goals 1 and 2 show Remove buttons
+    const removeButtons = screen.getAllByTitle('Remove goal')
+    await user.click(removeButtons[0]) // first Remove button = goal 1 (goal 0 is in edit mode)
+
+    // The edit input for goal 0 should still be visible and unchanged
+    expect(screen.getByDisplayValue(/Deliver four/)).toBeInTheDocument()
+  })
+
+  // ── Constraint editing index adjustment ─────────────────────
+
+  it('deleting constraint above the edited one shifts the edit index down', async () => {
+    const user = userEvent.setup()
+    renderWithContext(mayaState)
+    // maya constraints: [0] "Use conservative...", [1] "Client brand voice...", [2] "All claims..."
+    // Start editing constraint at index 2
+    const editButtons = screen.getAllByTitle('Edit constraint')
+    await user.click(editButtons[2])
+
+    const constraintInput = screen.getByDisplayValue(/All claims must have cited sources/)
+    expect(constraintInput).toBeInTheDocument()
+
+    // Delete constraint at index 0 (above the one being edited)
+    const removeButtons = screen.getAllByTitle('Remove constraint')
+    await user.click(removeButtons[0])
+
+    // The editor should still be visible with the same constraint text
+    expect(screen.getByDisplayValue(/All claims must have cited sources/)).toBeInTheDocument()
+  })
+
+  it('deleting constraint below the edited one does not change the edit index', async () => {
+    const user = userEvent.setup()
+    renderWithContext(mayaState)
+    // maya constraints: [0] "Use conservative...", [1] "Client brand voice...", [2] "All claims..."
+    // Start editing constraint at index 0
+    const editButtons = screen.getAllByTitle('Edit constraint')
+    await user.click(editButtons[0])
+
+    expect(screen.getByDisplayValue(/Use conservative market numbers/)).toBeInTheDocument()
+
+    // Delete constraint at index 1 (below the one being edited)
+    // Note: while editing constraint 0, only constraints 1 and 2 show Remove buttons
+    const removeButtons = screen.getAllByTitle('Remove constraint')
+    await user.click(removeButtons[0]) // first Remove button = constraint 1
+
+    // The edit input for constraint 0 should still be visible and unchanged
+    expect(screen.getByDisplayValue(/Use conservative market numbers/)).toBeInTheDocument()
+  })
+
+  // ── History Mode Read-Only Guards ────────────────────────────
+
+  it('constraint Add button is disabled when viewing historical state', () => {
+    const historyState: ProjectState = { ...mayaState, viewingTick: 3 }
+    renderWithContext(historyState)
+    const section = screen.getByText('Constraints').closest('section')!
+    const addButton = section.querySelector('button')!
+    expect(addButton).toBeDisabled()
+  })
+
+  it('constraint Edit buttons are disabled when viewing historical state', () => {
+    const historyState: ProjectState = { ...mayaState, viewingTick: 3 }
+    renderWithContext(historyState)
+    const editButtons = screen.getAllByTitle('Edit constraint')
+    editButtons.forEach(btn => {
+      expect(btn).toBeDisabled()
+    })
+  })
+
+  it('constraint Remove buttons are disabled when viewing historical state', () => {
+    const historyState: ProjectState = { ...mayaState, viewingTick: 3 }
+    renderWithContext(historyState)
+    const removeButtons = screen.getAllByTitle('Remove constraint')
+    removeButtons.forEach(btn => {
+      expect(btn).toBeDisabled()
+    })
+  })
+
+  it('goal Add button is disabled when viewing historical state', () => {
+    const historyState: ProjectState = { ...mayaState, viewingTick: 3 }
+    renderWithContext(historyState)
+    const section = screen.getByText('Goals').closest('div')!
+    const addButton = section.querySelector('button')!
+    expect(addButton).toBeDisabled()
+  })
+
+  it('goal Edit buttons are disabled when viewing historical state', () => {
+    const historyState: ProjectState = { ...mayaState, viewingTick: 3 }
+    renderWithContext(historyState)
+    const editButtons = screen.getAllByTitle('Edit goal')
+    editButtons.forEach(btn => {
+      expect(btn).toBeDisabled()
+    })
+  })
+
+  it('goal Remove buttons are disabled when viewing historical state', () => {
+    const historyState: ProjectState = { ...mayaState, viewingTick: 3 }
+    renderWithContext(historyState)
+    const removeButtons = screen.getAllByTitle('Remove goal')
+    removeButtons.forEach(btn => {
+      expect(btn).toBeDisabled()
+    })
+  })
+
+  it('checkpoint toggle buttons are disabled when viewing historical state', () => {
+    const historyState: ProjectState = { ...mayaState, viewingTick: 3 }
+    renderWithContext(historyState)
+    const toggleButtons = screen.getAllByTitle(/checkpoint/i)
+    toggleButtons.forEach(btn => {
+      expect(btn).toBeDisabled()
+    })
+  })
+
+  it('constraint buttons are NOT disabled in live mode', () => {
+    renderWithContext(mayaState)
+    const editButtons = screen.getAllByTitle('Edit constraint')
+    editButtons.forEach(btn => {
+      expect(btn).not.toBeDisabled()
+    })
   })
 })

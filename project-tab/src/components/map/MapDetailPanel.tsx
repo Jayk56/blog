@@ -46,6 +46,7 @@ export type { Selection }
 function IssueDetail({ issue }: { issue: CoherenceIssue }) {
   const state = useProjectState()
   const dispatch = useProjectDispatch()
+  const isHistorical = state.viewingTick !== null
 
   const agents = state.project?.agents.filter((a) => issue.agentIds.includes(a.id)) ?? []
   const artifacts = state.artifacts.filter((a) => issue.artifactIds.includes(a.id))
@@ -100,25 +101,35 @@ function IssueDetail({ issue }: { issue: CoherenceIssue }) {
 
       {/* Actions */}
       {isActive && (
-        <div className="flex gap-2 pt-2">
-          <button
-            onClick={() => dispatch({ type: 'resolve-issue', issueId: issue.id, newStatus: 'resolved' })}
-            className="px-3 py-1.5 bg-success/20 text-success text-xs rounded hover:bg-success/30 transition-colors"
-          >
-            Resolve
-          </button>
-          <button
-            onClick={() => dispatch({ type: 'resolve-issue', issueId: issue.id, newStatus: 'accepted' })}
-            className="px-3 py-1.5 bg-surface-3 text-text-secondary text-xs rounded hover:bg-border transition-colors"
-          >
-            Accept
-          </button>
-          <button
-            onClick={() => dispatch({ type: 'resolve-issue', issueId: issue.id, newStatus: 'dismissed' })}
-            className="px-3 py-1.5 bg-surface-3 text-text-muted text-xs rounded hover:bg-border transition-colors"
-          >
-            Dismiss
-          </button>
+        <div className="space-y-2 pt-2">
+          {isHistorical && (
+            <p className="text-[11px] text-text-muted">
+              Viewing historical state — actions disabled
+            </p>
+          )}
+          <div className="flex gap-2">
+            <button
+              onClick={() => dispatch({ type: 'resolve-issue', issueId: issue.id, newStatus: 'resolved' })}
+              disabled={isHistorical}
+              className="px-3 py-1.5 bg-success/20 text-success text-xs rounded hover:bg-success/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Resolve
+            </button>
+            <button
+              onClick={() => dispatch({ type: 'resolve-issue', issueId: issue.id, newStatus: 'accepted' })}
+              disabled={isHistorical}
+              className="px-3 py-1.5 bg-surface-3 text-text-secondary text-xs rounded hover:bg-border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Accept
+            </button>
+            <button
+              onClick={() => dispatch({ type: 'resolve-issue', issueId: issue.id, newStatus: 'dismissed' })}
+              disabled={isHistorical}
+              className="px-3 py-1.5 bg-surface-3 text-text-muted text-xs rounded hover:bg-border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
     </div>

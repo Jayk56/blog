@@ -95,4 +95,43 @@ describe('BriefingWorkspace', () => {
     renderWithProviders(brakeState)
     expect(screen.getByText(/emergency brake engaged/i)).toBeInTheDocument()
   })
+
+  it('filters timeline events by viewingTick', () => {
+    const stateWithHistory: ProjectState = {
+      ...loadedState,
+      timeline: [
+        {
+          id: 'e-early',
+          tick: 2,
+          source: 'agent',
+          agentId: 'agent-1',
+          category: 'artifact_produced',
+          severity: 'info',
+          title: 'Early event',
+          description: 'Happened at tick 2.',
+          relatedArtifactIds: [],
+          relatedDecisionIds: [],
+          relatedCoherenceIssueIds: [],
+        },
+        {
+          id: 'e-late',
+          tick: 5,
+          source: 'agent',
+          agentId: 'agent-1',
+          category: 'artifact_produced',
+          severity: 'info',
+          title: 'Late event',
+          description: 'Happened at tick 5.',
+          relatedArtifactIds: [],
+          relatedDecisionIds: [],
+          relatedCoherenceIssueIds: [],
+        },
+      ],
+      viewingTick: 3,
+    }
+    renderWithProviders(stateWithHistory)
+    // Only the early event (tick 2) should be visible
+    expect(screen.getByText('Early event')).toBeInTheDocument()
+    expect(screen.queryByText('Late event')).not.toBeInTheDocument()
+  })
 })

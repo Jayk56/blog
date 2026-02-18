@@ -70,6 +70,7 @@ function ToolArgsDetail({ toolArgs }: { toolArgs: Record<string, unknown> }) {
 interface Props {
   decision: DecisionItem
   onOpenProvenance: (artifactId: string) => void
+  effectiveTick?: number
 }
 
 const severityLabel: Record<Severity, string> = {
@@ -80,10 +81,11 @@ const severityLabel: Record<Severity, string> = {
   info: 'Info',
 }
 
-export default function DecisionDetail({ decision, onOpenProvenance }: Props) {
+export default function DecisionDetail({ decision, onOpenProvenance, effectiveTick }: Props) {
   const dispatch = useProjectDispatch()
   const state = useProjectState()
   const api = useApi()
+  const isHistorical = state.viewingTick !== null
   const [rationale, setRationale] = useState('')
 
   // Reset rationale when switching between decisions
@@ -146,6 +148,14 @@ export default function DecisionDetail({ decision, onOpenProvenance }: Props) {
 
   return (
     <div className="p-5 space-y-5 overflow-y-auto">
+      {/* Historical mode banner */}
+      {isHistorical && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-surface-2 border border-border rounded-lg text-xs text-text-muted">
+          <AlertTriangle size={12} className="shrink-0" />
+          Viewing historical state — actions disabled
+        </div>
+      )}
+
       {/* Header */}
       <div>
         <div className="flex items-center gap-2 mb-2">
@@ -236,7 +246,7 @@ export default function DecisionDetail({ decision, onOpenProvenance }: Props) {
         {decision.dueByTick !== null && (
           <div>
             <div className="text-[10px] uppercase text-text-muted mb-1">Due</div>
-            {state.project && decision.dueByTick <= state.project.currentTick ? (
+            {state.project && decision.dueByTick <= (effectiveTick ?? state.project.currentTick) ? (
               <span className="flex items-center gap-1 text-sm text-danger font-medium">
                 <AlertTriangle size={14} />
                 Overdue
@@ -297,11 +307,11 @@ export default function DecisionDetail({ decision, onOpenProvenance }: Props) {
               </p>
               <button
                 onClick={() => handleResolve(option.id)}
-                disabled={decision.requiresRationale && !rationale.trim()}
+                disabled={isHistorical || (decision.requiresRationale && !rationale.trim())}
                 className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
                   option.recommended
-                    ? 'bg-accent text-white hover:bg-accent-muted disabled:opacity-40'
-                    : 'bg-surface-3 text-text-secondary hover:bg-border disabled:opacity-40'
+                    ? 'bg-accent text-white hover:bg-accent-muted disabled:opacity-40 disabled:cursor-not-allowed'
+                    : 'bg-surface-3 text-text-secondary hover:bg-border disabled:opacity-40 disabled:cursor-not-allowed'
                 }`}
               >
                 <span className="flex items-center gap-1">
@@ -320,8 +330,8 @@ export default function DecisionDetail({ decision, onOpenProvenance }: Props) {
           Rationale {decision.requiresRationale ? '(required)' : '(optional)'}
         </label>
         <textarea
-          className={`w-full px-3 py-2 bg-surface-2 border rounded-lg text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:border-accent/50 ${
-            decision.requiresRationale && !rationale.trim()
+          className={`w-full px-3 py-2 bg-surface-2 border rounded-lg text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:border-accent/50 disabled:opacity-40 disabled:cursor-not-allowed ${
+            !isHistorical && decision.requiresRationale && !rationale.trim()
               ? 'border-warning/50'
               : 'border-border'
           }`}
@@ -329,6 +339,7 @@ export default function DecisionDetail({ decision, onOpenProvenance }: Props) {
           placeholder="Why did you choose this option?"
           value={rationale}
           onChange={(e) => setRationale(e.target.value)}
+          disabled={isHistorical}
         />
         {decision.requiresRationale && !rationale.trim() && (
           <p className="text-[11px] text-warning mt-1">

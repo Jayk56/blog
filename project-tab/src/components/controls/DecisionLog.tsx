@@ -8,7 +8,7 @@
 import { useState } from 'react'
 import { RotateCcw, Flag, MessageSquarePlus } from 'lucide-react'
 import type { DecisionLogEntry, DecisionItem } from '../../types/index.js'
-import { useProjectDispatch } from '../../lib/context.js'
+import { useProjectDispatch, useProjectState } from '../../lib/context.js'
 
 interface DecisionLogProps {
   entries: DecisionLogEntry[]
@@ -17,6 +17,8 @@ interface DecisionLogProps {
 
 export default function DecisionLog({ entries, decisions }: DecisionLogProps) {
   const dispatch = useProjectDispatch()
+  const state = useProjectState()
+  const isHistorical = state.viewingTick !== null
   const [contextInput, setContextInput] = useState('')
   const [showContextForm, setShowContextForm] = useState(false)
 
@@ -55,12 +57,17 @@ export default function DecisionLog({ entries, decisions }: DecisionLogProps) {
         </h2>
         <button
           onClick={() => setShowContextForm(!showContextForm)}
-          className="flex items-center gap-1 text-xs text-accent hover:text-accent-muted transition-colors"
+          disabled={isHistorical}
+          className="flex items-center gap-1 text-xs text-accent hover:text-accent-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <MessageSquarePlus size={12} />
           Inject Context
         </button>
       </div>
+
+      {isHistorical && (
+        <p className="text-[11px] text-text-muted">Viewing historical state — actions disabled</p>
+      )}
 
       {/* Context injection form */}
       {showContextForm && (
@@ -76,7 +83,7 @@ export default function DecisionLog({ entries, decisions }: DecisionLogProps) {
           />
           <button
             onClick={handleInjectContext}
-            disabled={!contextInput.trim()}
+            disabled={!contextInput.trim() || isHistorical}
             className="px-3 py-2 text-sm bg-accent text-white rounded-md hover:bg-accent-muted transition-colors disabled:opacity-40"
           >
             Send
@@ -150,7 +157,8 @@ export default function DecisionLog({ entries, decisions }: DecisionLogProps) {
                     {entry.reversible && (
                       <button
                         onClick={() => handleReverse(entry)}
-                        className="p-1 text-text-muted hover:text-danger transition-colors"
+                        disabled={isHistorical}
+                        className="p-1 text-text-muted hover:text-danger transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         title="Reverse this decision"
                       >
                         <RotateCcw size={12} />
@@ -159,7 +167,8 @@ export default function DecisionLog({ entries, decisions }: DecisionLogProps) {
                     {!entry.flaggedForReview && (
                       <button
                         onClick={() => handleFlagForReview(entry)}
-                        className="p-1 text-text-muted hover:text-warning transition-colors"
+                        disabled={isHistorical}
+                        className="p-1 text-text-muted hover:text-warning transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         title="Flag for retroactive review"
                       >
                         <Flag size={12} />

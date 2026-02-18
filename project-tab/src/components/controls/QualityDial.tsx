@@ -4,7 +4,7 @@
  */
 
 import type { ThroughputQualityBias } from '../../types/index.js'
-import { useProjectDispatch } from '../../lib/context.js'
+import { useProjectDispatch, useProjectState } from '../../lib/context.js'
 
 interface QualityDialProps {
   bias: ThroughputQualityBias
@@ -12,6 +12,8 @@ interface QualityDialProps {
 
 export default function QualityDial({ bias }: QualityDialProps) {
   const dispatch = useProjectDispatch()
+  const state = useProjectState()
+  const isHistorical = state.viewingTick !== null
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     dispatch({ type: 'set-bias', bias: { value: Number(e.target.value) } })
@@ -30,7 +32,8 @@ export default function QualityDial({ bias }: QualityDialProps) {
           max={100}
           value={bias.value}
           onChange={handleChange}
-          className="w-full accent-accent"
+          disabled={isHistorical}
+          className="w-full accent-accent disabled:opacity-40 disabled:cursor-not-allowed"
         />
         <div className="flex justify-between text-[10px] text-text-muted uppercase tracking-wider">
           <span>Quality</span>

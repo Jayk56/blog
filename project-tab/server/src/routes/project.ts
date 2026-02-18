@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { randomUUID } from 'node:crypto'
-import { projectSeedSchema, draftBriefRequestSchema } from '../validation/schemas'
+import { projectSeedSchema, draftBriefRequestSchema, projectPatchSchema } from '../validation/schemas'
 import { parseBody } from './utils'
 import { mergeSeeds, configToSeedPayload } from '../lib/merge-seeds'
 import type { ApiRouteDeps } from './index'
@@ -93,6 +93,30 @@ export function createProjectRouter(deps: ProjectDeps): Router {
       return
     }
     res.json(config)
+  })
+
+  // PATCH /api/project
+  router.patch('/', (req, res) => {
+    const patch = parseBody(req, res, projectPatchSchema)
+    if (!patch) return
+
+    const config = deps.knowledgeStoreImpl!.getProjectConfig()
+    if (!config) {
+      res.status(404).json({ error: 'No project seeded' })
+      return
+    }
+
+    const updated = {
+      ...config,
+      ...(patch.title !== undefined && { title: patch.title }),
+      ...(patch.description !== undefined && { description: patch.description }),
+      ...(patch.goals !== undefined && { goals: patch.goals }),
+      ...(patch.constraints !== undefined && { constraints: patch.constraints }),
+      updatedAt: new Date().toISOString(),
+    }
+
+    deps.knowledgeStoreImpl!.storeProjectConfig(updated)
+    res.json({ project: updated })
   })
 
   // POST /api/project/draft-brief

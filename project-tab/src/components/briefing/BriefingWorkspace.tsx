@@ -9,13 +9,20 @@
  * 3. Recent agent activity feed
  */
 
-import { useProjectState } from '../../lib/context.js'
+import { useMemo } from 'react'
+import { useProjectState, useEffectiveTick } from '../../lib/context.js'
 import NarrativeBriefing from './NarrativeBriefing.js'
 import ActionSummary from './ActionSummary.js'
 import ActivityFeed from './ActivityFeed.js'
 
 export default function BriefingWorkspace() {
   const state = useProjectState()
+  const effectiveTick = useEffectiveTick()
+
+  const filteredTimeline = useMemo(
+    () => state.timeline.filter((e) => e.tick <= effectiveTick),
+    [state.timeline, effectiveTick],
+  )
 
   if (!state.project) {
     return (
@@ -42,9 +49,9 @@ export default function BriefingWorkspace() {
 
       {/* Agent activity feed */}
       <ActivityFeed
-        timeline={state.timeline}
+        timeline={filteredTimeline}
         agents={state.project.agents}
-        currentTick={state.project.currentTick}
+        currentTick={effectiveTick}
       />
     </div>
   )

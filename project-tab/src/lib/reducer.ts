@@ -58,6 +58,7 @@ export const initialState: ProjectState = {
   briefing: 'No project loaded. Select a scenario to begin.',
   activeScenarioId: null,
   autoSimulate: false,
+  viewingTick: null,
 };
 
 // ── Scenario registry ─────────────────────────────────────────────
@@ -146,6 +147,32 @@ export function projectReducer(
       next = { ...state, autoSimulate: !state.autoSimulate };
       break;
 
+    case 'set-viewing-tick':
+      next = {
+        ...state,
+        viewingTick: action.tick,
+        // Stop auto-simulate when entering history mode to prevent the
+        // interval from firing advance-tick and snapping back to live.
+        ...(action.tick !== null ? { autoSimulate: false } : {}),
+      };
+      break;
+
+    case 'update-description':
+      next = handleUpdateDescription(state, action.description);
+      break;
+
+    case 'update-goals':
+      next = handleUpdateGoals(state, action.goals);
+      break;
+
+    case 'remove-constraint':
+      next = handleRemoveConstraint(state, action.index);
+      break;
+
+    case 'edit-constraint':
+      next = handleEditConstraint(state, action.index, action.value);
+      break;
+
     // ── Server-pushed actions ───────────────────────────────────
     case 'server-state-sync':
       next = handleServerStateSync(state, action.serverState);
@@ -216,6 +243,7 @@ function handleLoadScenario(state: ProjectState, scenarioId: string): ProjectSta
     ...scenario,
     activeScenarioId: scenarioId,
     autoSimulate: false,
+    viewingTick: null,
   };
 }
 
@@ -230,6 +258,7 @@ function handleAdvanceTick(state: ProjectState): ProjectState {
       ...state.project,
       currentTick: nextTick,
     },
+    viewingTick: null,
   };
 }
 
@@ -576,6 +605,42 @@ function handleRejectRecommendation(
   };
 }
 
+// ── Brief CRUD handlers ──────────────────────────────────────────
+
+function handleUpdateDescription(state: ProjectState, description: string): ProjectState {
+  if (!state.project) return state;
+  return {
+    ...state,
+    project: { ...state.project, description },
+  };
+}
+
+function handleUpdateGoals(state: ProjectState, goals: string[]): ProjectState {
+  if (!state.project) return state;
+  return {
+    ...state,
+    project: { ...state.project, goals },
+  };
+}
+
+function handleRemoveConstraint(state: ProjectState, index: number): ProjectState {
+  if (!state.project) return state;
+  const constraints = state.project.constraints.filter((_, i) => i !== index);
+  return {
+    ...state,
+    project: { ...state.project, constraints },
+  };
+}
+
+function handleEditConstraint(state: ProjectState, index: number, value: string): ProjectState {
+  if (!state.project) return state;
+  const constraints = state.project.constraints.map((c, i) => (i === index ? value : c));
+  return {
+    ...state,
+    project: { ...state.project, constraints },
+  };
+}
+
 // ── Server-pushed action handlers ────────────────────────────────
 
 function handleServerStateSync(
@@ -598,6 +663,18 @@ function handleServerStateSync(
   // Preserve local-only fields
   merged.autoSimulate = state.autoSimulate
   merged.activeScenarioId = state.activeScenarioId
+  merged.viewingTick = state.viewingTick
+
+  // Preserve user's local brief edits (server may send placeholder values)
+  if (state.project && merged.project) {
+    merged.project = {
+      ...merged.project,
+      description: state.project.description,
+      goals: state.project.goals,
+      constraints: state.project.constraints,
+    }
+  }
+
   return merged
 }
 

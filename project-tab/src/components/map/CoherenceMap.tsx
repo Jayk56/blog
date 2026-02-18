@@ -6,9 +6,10 @@
  * rather than a full graph visualization library.
  */
 
+import { useMemo } from 'react'
 import { Circle, AlertTriangle, CheckCircle, XCircle } from 'lucide-react'
 import type { CoherenceIssue, Workstream, Severity } from '../../types/index.js'
-import { useProjectState } from '../../lib/context.js'
+import { useProjectState, useEffectiveTick } from '../../lib/context.js'
 
 interface Props {
   onSelectIssue: (issue: CoherenceIssue) => void
@@ -43,11 +44,29 @@ const severityBorder: Record<Severity, string> = {
 
 export default function CoherenceMap({ onSelectIssue, onSelectWorkstream }: Props) {
   const state = useProjectState()
+  const effectiveTick = useEffectiveTick()
+
+  // Filter issues by effectiveTick: only show issues detected at or before the viewed tick.
+  // For issues resolved after effectiveTick, mask them as active (not yet resolved).
+  const tickFilteredIssues = useMemo(() => {
+    return state.coherenceIssues
+      .filter((i) => i.detectedAtTick <= effectiveTick)
+      .map((i) => {
+        if (i.resolvedAtTick !== null && i.resolvedAtTick > effectiveTick) {
+          // Mask resolved status back to the pre-resolution status
+          const activeStatus = i.status === 'resolved' || i.status === 'accepted' || i.status === 'dismissed'
+            ? 'detected' as const
+            : i.status
+          return { ...i, status: activeStatus, resolvedAtTick: null }
+        }
+        return i
+      })
+  }, [state.coherenceIssues, effectiveTick])
 
   if (!state.project) return null
 
   const workstreams = state.project.workstreams
-  const issues = state.coherenceIssues
+  const issues = tickFilteredIssues
   const activeIssues = issues.filter(
     (i) => i.status === 'detected' || i.status === 'confirmed' || i.status === 'in_progress',
   )

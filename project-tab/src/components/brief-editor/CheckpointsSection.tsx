@@ -6,7 +6,7 @@
  */
 
 import type { Checkpoint } from '../../types/index.js'
-import { useProjectDispatch } from '../../lib/context.js'
+import { useProjectDispatch, useProjectState } from '../../lib/context.js'
 
 interface CheckpointsSectionProps {
   checkpoints: Checkpoint[]
@@ -14,6 +14,8 @@ interface CheckpointsSectionProps {
 
 export default function CheckpointsSection({ checkpoints }: CheckpointsSectionProps) {
   const dispatch = useProjectDispatch()
+  const state = useProjectState()
+  const isHistorical = state.viewingTick !== null
 
   function handleToggle(checkpointId: string, enabled: boolean) {
     dispatch({ type: 'toggle-checkpoint', checkpointId, enabled })
@@ -34,7 +36,8 @@ export default function CheckpointsSection({ checkpoints }: CheckpointsSectionPr
             <div className="flex items-center gap-3">
               <button
                 onClick={() => handleToggle(cp.id, !cp.enabled)}
-                className={`w-8 h-5 rounded-full transition-colors relative flex-shrink-0 ${
+                disabled={isHistorical}
+                className={`w-8 h-5 rounded-full transition-colors relative flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${
                   cp.enabled ? 'bg-accent' : 'bg-surface-3'
                 }`}
                 title={cp.enabled ? 'Disable checkpoint' : 'Enable checkpoint'}

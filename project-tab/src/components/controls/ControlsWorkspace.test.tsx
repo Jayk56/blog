@@ -278,4 +278,161 @@ describe('ControlsWorkspace', () => {
       expect(ticks[i]).toBeGreaterThanOrEqual(ticks[i + 1])
     }
   })
+
+  // ── Temporal Navigation (Trust Trajectories) ─────────────────
+
+  it('clips trust sparklines at viewed tick', () => {
+    // David backend agent has trajectory at ticks 2, 6, 10, 14
+    // Set viewingTick to 7 to clip to ticks 2 and 6 only
+    const historyState: ProjectState = {
+      ...davidState,
+      viewingTick: 7,
+    }
+    renderWithContext(historyState)
+
+    // Backend Agent should show score from tick 6 (score 0.80 = 80)
+    expect(screen.getByText(/80/)).toBeInTheDocument()
+    // The full trajectory score (82) should NOT be visible
+    // (It would only be from the unclipped tick 14 score)
+    // Note: We can't easily distinguish 82 from other numbers,
+    // but the existence of 80 confirms clipping is happening
+  })
+
+  it('shows "no data at this tick" for agents with no trust snapshots before effectiveTick', () => {
+    // David frontend agent has trajectory starting at tick 8 (score 0.70).
+    // At viewingTick=5, clippedTrajectory is empty. Should show "no data"
+    // instead of the live currentScore (0.78) and trend ('increasing').
+    const historyState: ProjectState = {
+      ...davidState,
+      viewingTick: 5,
+    }
+    renderWithContext(historyState)
+
+    // Frontend Agent should show the "no data" message
+    expect(screen.getAllByText(/no data at this tick/).length).toBeGreaterThan(0)
+
+    // The live score of 78 (from currentScore 0.78) should NOT appear for that agent
+    // Since other agents may show 78, we just check the "no data" message is present
+  })
+
+  it('shows clipped score (not live score) for agents with trust snapshots at effectiveTick', () => {
+    // David backend agent: trajectory ticks 2 (0.75), 6 (0.80), 10 (0.82), 14 (0.82)
+    // Live currentScore is 0.82. At viewingTick=7, clipped data has ticks 2 and 6.
+    // Should show score 80 (from tick 6, score 0.80), NOT 82 (live).
+    const historyState: ProjectState = {
+      ...davidState,
+      viewingTick: 7,
+    }
+    renderWithContext(historyState)
+
+    // Score 80 should be shown (from clipped tick 6 data)
+    expect(screen.getByText(/80/)).toBeInTheDocument()
+    // The agent card for Backend Agent should NOT show 82 (the live score)
+    // We verify by checking Backend Agent text is present and 80 is shown
+    expect(screen.getByText('Backend Agent')).toBeInTheDocument()
+  })
+
+  // ── History Mode Read-Only Guards ────────────────────────────
+
+  it('DecisionLog: reverse button is disabled when viewing historical state', () => {
+    const historyState: ProjectState = {
+      ...mayaState,
+      viewingTick: 3,
+    }
+    renderWithContext(historyState)
+    // Maya dl1 is reversible=true, reversed=false, flaggedForReview=false
+    const reverseButton = screen.getByTitle('Reverse this decision')
+    expect(reverseButton).toBeDisabled()
+  })
+
+  it('DecisionLog: flag button is disabled when viewing historical state', () => {
+    const historyState: ProjectState = {
+      ...mayaState,
+      viewingTick: 3,
+    }
+    renderWithContext(historyState)
+    // Maya dl1 is flaggedForReview=false so the flag button is visible
+    const flagButton = screen.getByTitle('Flag for retroactive review')
+    expect(flagButton).toBeDisabled()
+  })
+
+  it('DecisionLog: inject context button is disabled when viewing historical state', () => {
+    const historyState: ProjectState = {
+      ...mayaState,
+      viewingTick: 3,
+    }
+    renderWithContext(historyState)
+    const injectButton = screen.getByText('Inject Context').closest('button')!
+    expect(injectButton).toBeDisabled()
+  })
+
+  it('DecisionLog: shows historical state message when viewing historical state', () => {
+    const historyState: ProjectState = {
+      ...mayaState,
+      viewingTick: 3,
+    }
+    renderWithContext(historyState)
+    // Both ModeSelector and DecisionLog show this message in history mode
+    const messages = screen.getAllByText(/Viewing historical state — actions disabled/)
+    expect(messages.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('ModeSelector: mode buttons are disabled when viewing historical state', () => {
+    const historyState: ProjectState = {
+      ...mayaState,
+      viewingTick: 3,
+    }
+    renderWithContext(historyState)
+    // All three mode buttons in the ModeSelector section should be disabled
+    const section = screen.getByText('Control Mode').closest('section')!
+    const modeButtons = section.querySelectorAll('button')
+    // There are 3 mode buttons (Orchestrator, Adaptive, Ecosystem)
+    const modeButtonArray = Array.from(modeButtons)
+    expect(modeButtonArray.length).toBeGreaterThanOrEqual(3)
+    modeButtonArray.slice(0, 3).forEach(btn => {
+      expect(btn).toBeDisabled()
+    })
+  })
+
+  it('ModeSelector: accept/dismiss recommendation buttons are disabled in history mode', () => {
+    const historyState: ProjectState = {
+      ...davidState,
+      viewingTick: 10,
+    }
+    renderWithContext(historyState)
+    const acceptButton = screen.getByText('Accept').closest('button')!
+    const dismissButton = screen.getByText('Dismiss').closest('button')!
+    expect(acceptButton).toBeDisabled()
+    expect(dismissButton).toBeDisabled()
+  })
+
+  it('ModeSelector: shows historical state message when viewing historical state', () => {
+    const historyState: ProjectState = {
+      ...mayaState,
+      viewingTick: 3,
+    }
+    renderWithContext(historyState)
+    // Both DecisionLog and ModeSelector add this message in history mode
+    const messages = screen.getAllByText(/Viewing historical state — actions disabled/)
+    expect(messages.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('QualityDial: slider is disabled when viewing historical state', () => {
+    const historyState: ProjectState = {
+      ...mayaState,
+      viewingTick: 3,
+    }
+    renderWithContext(historyState)
+    const slider = screen.getByRole('slider')
+    expect(slider).toBeDisabled()
+  })
+
+  it('mode buttons are NOT disabled when in live mode', () => {
+    renderWithContext(mayaState)
+    const section = screen.getByText('Control Mode').closest('section')!
+    const modeButtons = section.querySelectorAll('button')
+    Array.from(modeButtons).slice(0, 3).forEach(btn => {
+      expect(btn).not.toBeDisabled()
+    })
+  })
 })

@@ -6,7 +6,7 @@
  * trust trajectories, review pattern analysis, and the decision log.
  */
 
-import { useProjectState } from '../../lib/context.js'
+import { useProjectState, useEffectiveTick } from '../../lib/context.js'
 import ModeSelector from './ModeSelector.js'
 import ControlTopology from './ControlTopology.js'
 import QualityDial from './QualityDial.js'
@@ -16,6 +16,7 @@ import DecisionLog from './DecisionLog.js'
 
 export default function ControlsWorkspace() {
   const state = useProjectState()
+  const effectiveTick = useEffectiveTick()
 
   if (!state.project) {
     return (
@@ -54,6 +55,7 @@ export default function ControlsWorkspace() {
         <TrustTrajectories
           agents={state.project.agents}
           trustProfiles={state.trustProfiles}
+          effectiveTick={effectiveTick}
         />
         <ReviewPatterns patterns={state.metrics.reviewPatterns} />
       </div>

@@ -10,6 +10,7 @@ import type { Agent, TrustProfile } from '../../types/index.js'
 interface TrustTrajectoriesProps {
   agents: Agent[]
   trustProfiles: TrustProfile[]
+  effectiveTick?: number
 }
 
 /** Render a simple inline SVG sparkline from trust snapshots. */
@@ -68,7 +69,7 @@ function trendArrow(trend: TrustProfile['trend']): string {
   }
 }
 
-export default function TrustTrajectories({ agents, trustProfiles }: TrustTrajectoriesProps) {
+export default function TrustTrajectories({ agents, trustProfiles, effectiveTick }: TrustTrajectoriesProps) {
   return (
     <section className="space-y-3">
       <h2 className="text-sm font-medium text-text-muted uppercase tracking-wider">
@@ -79,42 +80,78 @@ export default function TrustTrajectories({ agents, trustProfiles }: TrustTrajec
         {agents.filter(a => a.active).map((agent) => {
           const profile = trustProfiles.find(tp => tp.agentId === agent.id)
           if (!profile) return null
-          const latest = profile.trajectory[profile.trajectory.length - 1]
+
+          // Clip trajectory to effectiveTick for temporal navigation
+          const clippedTrajectory = effectiveTick != null
+            ? profile.trajectory.filter(s => s.tick <= effectiveTick)
+            : profile.trajectory
+          const clippedProfile = { ...profile, trajectory: clippedTrajectory }
+
+          // Derive latest values from clipped data
+          const latest = clippedTrajectory[clippedTrajectory.length - 1]
+          // When viewing a historical tick, don't fall back to live values.
+          // In live mode (effectiveTick undefined), fall back to profile values.
+          const displayScore = latest
+            ? latest.score
+            : effectiveTick != null
+              ? null
+              : profile.currentScore
+          const displayTrend: TrustProfile['trend'] = clippedTrajectory.length >= 2
+            ? clippedTrajectory[clippedTrajectory.length - 1].score > clippedTrajectory[clippedTrajectory.length - 2].score
+              ? 'increasing'
+              : clippedTrajectory[clippedTrajectory.length - 1].score < clippedTrajectory[clippedTrajectory.length - 2].score
+                ? 'decreasing'
+                : 'stable'
+            : effectiveTick != null
+              ? 'stable'
+              : profile.trend
 
           return (
             <div
               key={agent.id}
               className="p-3 rounded-lg bg-surface-1 border border-border"
             >
-              <div className="flex items-center justify-between mb-2">
+              {displayScore === null ? (
+                /* No data available at this historical tick */
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-text-primary">
                     {agent.name}
                   </span>
-                  <span className={`text-xs ${getTrustColor(profile.currentScore)}`}>
-                    {Math.round(profile.currentScore * 100)}
-                    {' '}{trendArrow(profile.trend)}
-                  </span>
+                  <span className="text-xs text-text-muted">— no data at this tick</span>
                 </div>
-                <Sparkline profile={profile} />
-              </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-text-primary">
+                        {agent.name}
+                      </span>
+                      <span className={`text-xs ${getTrustColor(displayScore)}`}>
+                        {Math.round(displayScore * 100)}
+                        {' '}{trendArrow(displayTrend)}
+                      </span>
+                    </div>
+                    <Sparkline profile={clippedProfile} />
+                  </div>
 
-              {/* Breakdown */}
-              {latest && (
-                <div className="flex gap-4 text-[10px] text-text-muted">
-                  <span>
-                    <span className="text-success">{latest.successCount}</span> success
-                  </span>
-                  <span>
-                    <span className="text-warning">{latest.overrideCount}</span> override
-                  </span>
-                  <span>
-                    <span className="text-danger">{latest.reworkCount}</span> rework
-                  </span>
-                  <span>
-                    {latest.totalTasks} total
-                  </span>
-                </div>
+                  {/* Breakdown */}
+                  {latest && (
+                    <div className="flex gap-4 text-[10px] text-text-muted">
+                      <span>
+                        <span className="text-success">{latest.successCount}</span> success
+                      </span>
+                      <span>
+                        <span className="text-warning">{latest.overrideCount}</span> override
+                      </span>
+                      <span>
+                        <span className="text-danger">{latest.reworkCount}</span> rework
+                      </span>
+                      <span>
+                        {latest.totalTasks} total
+                      </span>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )

@@ -583,4 +583,128 @@ describe('project routes', () => {
       expect(body.project.provenance.source).toBe('api')
     })
   })
+
+  describe('PATCH /api/project', () => {
+    async function seedProject() {
+      await fetch(`${app.baseUrl}/api/project/seed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(seedPayload)
+      })
+    }
+
+    function patchProject(body: Record<string, unknown>) {
+      return fetch(`${app.baseUrl}/api/project`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+    }
+
+    it('returns 404 when no project is seeded', async () => {
+      const res = await patchProject({ title: 'New Title' })
+      expect(res.status).toBe(404)
+      const body = await res.json() as any
+      expect(body.error).toBe('No project seeded')
+    })
+
+    it('updates title and description', async () => {
+      await seedProject()
+      const res = await patchProject({ title: 'Updated Title', description: 'Updated desc' })
+      expect(res.status).toBe(200)
+      const body = await res.json() as any
+      expect(body.project.title).toBe('Updated Title')
+      expect(body.project.description).toBe('Updated desc')
+    })
+
+    it('partial update only changes specified fields', async () => {
+      await seedProject()
+      const res = await patchProject({ description: 'Only desc changed' })
+      expect(res.status).toBe(200)
+      const body = await res.json() as any
+      // description changed
+      expect(body.project.description).toBe('Only desc changed')
+      // title, goals, constraints unchanged
+      expect(body.project.title).toBe('Test Project')
+      expect(body.project.goals).toEqual(['Build it'])
+      expect(body.project.constraints).toEqual([])
+    })
+
+    it('empty body returns current config unchanged', async () => {
+      await seedProject()
+      const res = await patchProject({})
+      expect(res.status).toBe(200)
+      const body = await res.json() as any
+      expect(body.project.title).toBe('Test Project')
+      expect(body.project.description).toBe('A test')
+      expect(body.project.goals).toEqual(['Build it'])
+    })
+
+    it('returns 400 for invalid field types', async () => {
+      await seedProject()
+      const res = await patchProject({ title: 123 })
+      expect(res.status).toBe(400)
+      const body = await res.json() as any
+      expect(body.error).toBe('Validation failed')
+    })
+
+    it('replaces goals array entirely', async () => {
+      await seedProject()
+      const res = await patchProject({ goals: ['New goal 1', 'New goal 2'] })
+      expect(res.status).toBe(200)
+      const body = await res.json() as any
+      expect(body.project.goals).toEqual(['New goal 1', 'New goal 2'])
+    })
+
+    it('replaces constraints array entirely', async () => {
+      await seedProject()
+      const res = await patchProject({ constraints: ['Constraint A', 'Constraint B'] })
+      expect(res.status).toBe(200)
+      const body = await res.json() as any
+      expect(body.project.constraints).toEqual(['Constraint A', 'Constraint B'])
+    })
+
+    it('persists changes to the store', async () => {
+      await seedProject()
+      await patchProject({ title: 'Persisted Title', goals: ['Persisted goal'] })
+
+      // Verify via GET
+      const res = await fetch(`${app.baseUrl}/api/project`)
+      expect(res.status).toBe(200)
+      const body = await res.json() as any
+      expect(body.title).toBe('Persisted Title')
+      expect(body.goals).toEqual(['Persisted goal'])
+    })
+
+    it('updates the updatedAt timestamp', async () => {
+      await seedProject()
+
+      // Get original updatedAt
+      const beforeRes = await fetch(`${app.baseUrl}/api/project`)
+      const before = await beforeRes.json() as any
+      const originalUpdatedAt = before.updatedAt
+
+      // Small delay to ensure different timestamp
+      await new Promise(r => setTimeout(r, 10))
+
+      await patchProject({ title: 'Timestamp test' })
+
+      const afterRes = await fetch(`${app.baseUrl}/api/project`)
+      const after = await afterRes.json() as any
+      expect(after.updatedAt).not.toBe(originalUpdatedAt)
+    })
+
+    it('preserves non-patched config fields like workstreams and defaults', async () => {
+      await seedProject()
+      await patchProject({ title: 'Changed' })
+
+      const res = await fetch(`${app.baseUrl}/api/project`)
+      const body = await res.json() as any
+      expect(body.title).toBe('Changed')
+      // Workstreams, defaultTools, defaultConstraints should be preserved
+      expect(body.workstreams).toHaveLength(2)
+      expect(body.defaultTools).toEqual(['Read', 'Write'])
+      expect(body.defaultConstraints).toEqual(['No bugs'])
+    })
+  })
 })

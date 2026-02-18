@@ -582,6 +582,197 @@ describe('toggle-auto-simulate', () => {
   });
 });
 
+// ── set-viewing-tick ──────────────────────────────────────────────
+
+describe('set-viewing-tick', () => {
+  it('sets viewingTick to a specific number', () => {
+    const state = makeLoadedState();
+    const next = projectReducer(state, { type: 'set-viewing-tick', tick: 3 });
+    expect(next.viewingTick).toBe(3);
+  });
+
+  it('sets viewingTick to null (return to live)', () => {
+    const state = makeLoadedState();
+    state.viewingTick = 3;
+    const next = projectReducer(state, { type: 'set-viewing-tick', tick: null });
+    expect(next.viewingTick).toBeNull();
+  });
+
+  it('preserves other state when setting viewingTick', () => {
+    const state = makeLoadedState();
+    const next = projectReducer(state, { type: 'set-viewing-tick', tick: 2 });
+    expect(next.project!.currentTick).toBe(state.project!.currentTick);
+    expect(next.decisions).toEqual(state.decisions);
+  });
+
+  it('sets autoSimulate to false when entering history mode (non-null tick)', () => {
+    const state = makeLoadedState();
+    state.autoSimulate = true;
+    const next = projectReducer(state, { type: 'set-viewing-tick', tick: 3 });
+    expect(next.viewingTick).toBe(3);
+    expect(next.autoSimulate).toBe(false);
+  });
+
+  it('does not change autoSimulate when returning to live mode (null tick)', () => {
+    const state = makeLoadedState();
+    state.autoSimulate = true;
+    state.viewingTick = 3;
+    const next = projectReducer(state, { type: 'set-viewing-tick', tick: null });
+    expect(next.viewingTick).toBeNull();
+    // autoSimulate is preserved when returning to live — the user may want
+    // to resume auto-simulate after scrubbing back
+    expect(next.autoSimulate).toBe(true);
+  });
+});
+
+// ── viewingTick reset behavior ───────────────────────────────────
+
+describe('viewingTick reset on advance-tick', () => {
+  it('resets viewingTick to null when advancing tick', () => {
+    const state = makeLoadedState();
+    state.viewingTick = 3;
+    const next = projectReducer(state, { type: 'advance-tick' });
+    expect(next.viewingTick).toBeNull();
+    expect(next.project!.currentTick).toBe(6);
+  });
+
+  it('viewingTick is already null when advancing from live', () => {
+    const state = makeLoadedState();
+    state.viewingTick = null;
+    const next = projectReducer(state, { type: 'advance-tick' });
+    expect(next.viewingTick).toBeNull();
+  });
+});
+
+// ── initialState viewingTick ─────────────────────────────────────
+
+describe('initialState viewingTick', () => {
+  it('defaults viewingTick to null', () => {
+    expect(initialState.viewingTick).toBeNull();
+  });
+});
+
+// ── server-state-sync ─────────────────────────────────────────────
+
+describe('server-state-sync', () => {
+  it('preserves local brief edits (description, goals, constraints)', () => {
+    const state = makeLoadedState();
+    // Simulate local brief edits
+    state.project!.description = 'User edited description';
+    state.project!.goals = ['User goal 1', 'User goal 2'];
+    state.project!.constraints = ['User constraint A'];
+
+    // Server sends a state sync with placeholder/empty brief fields
+    const serverState: Partial<ProjectState> = {
+      project: {
+        ...state.project!,
+        description: 'Server placeholder',
+        goals: [],
+        constraints: [],
+        currentTick: 10, // server has a newer tick
+      },
+    };
+
+    const next = projectReducer(state, {
+      type: 'server-state-sync',
+      serverState,
+    });
+
+    // Brief fields should be preserved from local state
+    expect(next.project!.description).toBe('User edited description');
+    expect(next.project!.goals).toEqual(['User goal 1', 'User goal 2']);
+    expect(next.project!.constraints).toEqual(['User constraint A']);
+  });
+
+  it('preserves viewingTick during server sync', () => {
+    const state = makeLoadedState();
+    state.viewingTick = 3;
+
+    const next = projectReducer(state, {
+      type: 'server-state-sync',
+      serverState: {
+        project: {
+          ...state.project!,
+          currentTick: 10,
+        },
+      },
+    });
+
+    // viewingTick should be preserved -- server sync shouldn't snap out of history mode
+    expect(next.viewingTick).toBe(3);
+  });
+
+  it('still updates non-brief project fields (currentTick, agents)', () => {
+    const state = makeLoadedState();
+    state.project!.description = 'Local description';
+    state.project!.goals = ['Local goal'];
+    state.project!.constraints = ['Local constraint'];
+
+    const updatedAgent = {
+      ...state.project!.agents[0],
+      trustScore: 0.95,
+    };
+
+    const serverState: Partial<ProjectState> = {
+      project: {
+        ...state.project!,
+        currentTick: 20,
+        agents: [updatedAgent, state.project!.agents[1]],
+        description: 'Server desc',
+        goals: ['Server goal'],
+        constraints: ['Server constraint'],
+      },
+    };
+
+    const next = projectReducer(state, {
+      type: 'server-state-sync',
+      serverState,
+    });
+
+    // Non-brief fields should be updated from server
+    expect(next.project!.currentTick).toBe(20);
+    expect(next.project!.agents[0].trustScore).toBe(0.95);
+    // But brief fields remain local
+    expect(next.project!.description).toBe('Local description');
+    expect(next.project!.goals).toEqual(['Local goal']);
+    expect(next.project!.constraints).toEqual(['Local constraint']);
+  });
+
+  it('preserves autoSimulate and activeScenarioId', () => {
+    const state = makeLoadedState();
+    state.autoSimulate = true;
+    state.activeScenarioId = 'david';
+
+    const next = projectReducer(state, {
+      type: 'server-state-sync',
+      serverState: {
+        autoSimulate: false,
+        activeScenarioId: null,
+      },
+    });
+
+    expect(next.autoSimulate).toBe(true);
+    expect(next.activeScenarioId).toBe('david');
+  });
+
+  it('does not overwrite populated arrays with empty server arrays', () => {
+    const state = makeLoadedState();
+    // State has decisions and coherenceIssues from makeLoadedState
+
+    const next = projectReducer(state, {
+      type: 'server-state-sync',
+      serverState: {
+        decisions: [],
+        coherenceIssues: [],
+      },
+    });
+
+    // Should keep the populated arrays
+    expect(next.decisions.length).toBeGreaterThan(0);
+    expect(next.coherenceIssues.length).toBeGreaterThan(0);
+  });
+});
+
 // ── Derived value recomputation ──────────────────────────────────
 
 describe('derived value recomputation', () => {

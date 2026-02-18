@@ -74,3 +74,15 @@ export function useApi(): ApiClient | null {
 export function useConnected(): boolean {
   return useContext(ProjectContext).connected;
 }
+
+/**
+ * Returns the tick number that workspaces should use for filtering.
+ * If viewingTick is set (temporal navigation active), returns that.
+ * Otherwise returns the live currentTick.
+ * Returns 0 when no project is loaded.
+ */
+export function useEffectiveTick(): number {
+  const { state } = useContext(ProjectContext);
+  if (!state.project) return 0;
+  return state.viewingTick ?? state.project.currentTick;
+}

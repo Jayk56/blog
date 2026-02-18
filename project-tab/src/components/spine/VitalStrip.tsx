@@ -105,11 +105,51 @@ export default function VitalStrip() {
         {/* Simulation controls */}
         {project && (
           <div className="flex items-center gap-1.5">
-            <span className="text-xs text-text-muted">T{project.currentTick}</span>
+            {/* Tick scrubber (temporal navigation) */}
+            {project.currentTick > 1 && (
+              <input
+                type="range"
+                min={1}
+                max={project.currentTick}
+                value={state.viewingTick ?? project.currentTick}
+                aria-label="Tick scrubber"
+                className="w-20 h-1 accent-accent cursor-pointer"
+                onChange={(e) => {
+                  const val = Number(e.target.value)
+                  dispatch({
+                    type: 'set-viewing-tick',
+                    tick: val >= project.currentTick ? null : val,
+                  })
+                }}
+              />
+            )}
+
+            {/* Tick label with live/history indicator */}
+            <span
+              className={`text-xs font-medium ${
+                state.viewingTick !== null ? 'text-warning' : 'text-text-muted'
+              }`}
+            >
+              T{state.viewingTick ?? project.currentTick}
+            </span>
+            {state.viewingTick === null ? (
+              <span className="text-[10px] text-success font-medium">live</span>
+            ) : (
+              <button
+                className="text-[10px] text-accent font-medium hover:underline"
+                title="Return to live"
+                aria-label="Return to live"
+                onClick={() => dispatch({ type: 'set-viewing-tick', tick: null })}
+              >
+                Live
+              </button>
+            )}
+
             <button
-              className="w-6 h-6 flex items-center justify-center rounded hover:bg-surface-2 text-text-muted hover:text-text-secondary transition-colors"
+              className="w-6 h-6 flex items-center justify-center rounded hover:bg-surface-2 text-text-muted hover:text-text-secondary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               title="Advance one tick"
               aria-label="Advance one tick"
+              disabled={state.viewingTick !== null}
               onClick={() => {
                 if (api) {
                   // Live mode: only advance locally if the backend succeeds
@@ -125,13 +165,14 @@ export default function VitalStrip() {
               <ChevronRight size={14} />
             </button>
             <button
-              className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${
+              className={`w-6 h-6 flex items-center justify-center rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                 state.autoSimulate
                   ? 'bg-accent/15 text-accent'
                   : 'hover:bg-surface-2 text-text-muted hover:text-text-secondary'
               }`}
               title={state.autoSimulate ? 'Pause auto-simulate' : 'Auto-simulate'}
               aria-label={state.autoSimulate ? 'Pause auto-simulate' : 'Auto-simulate'}
+              disabled={state.viewingTick !== null}
               onClick={() => dispatch({ type: 'toggle-auto-simulate' })}
             >
               {state.autoSimulate ? <Pause size={12} /> : <Play size={12} />}

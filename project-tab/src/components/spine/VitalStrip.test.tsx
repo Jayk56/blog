@@ -117,4 +117,73 @@ describe('VitalStrip', () => {
       scenarioId: 'david',
     })
   })
+
+  // ── Temporal Navigation Tests ─────────────────────────────────
+
+  it('renders tick scrubber slider when project is loaded', () => {
+    renderWithContext(mayaState)
+    const slider = screen.getByRole('slider', { name: /tick scrubber/i })
+    expect(slider).toBeInTheDocument()
+    expect(slider).toHaveAttribute('min', '1')
+    expect(slider).toHaveAttribute('max', String(mayaState.project!.currentTick))
+  })
+
+  it('shows "live" indicator when viewingTick is null', () => {
+    renderWithContext(mayaState)
+    expect(screen.getByText('live')).toBeInTheDocument()
+  })
+
+  it('shows "Live" button and warning-colored tick when viewing history', () => {
+    const historyState: ProjectState = {
+      ...mayaState,
+      viewingTick: 3,
+    }
+    renderWithContext(historyState)
+    // Tick label shows T3 in warning color
+    expect(screen.getByText('T3')).toBeInTheDocument()
+    // Live button appears to return to current
+    expect(screen.getByRole('button', { name: /return to live/i })).toBeInTheDocument()
+  })
+
+  it('dispatches set-viewing-tick with null when Live button clicked', async () => {
+    const user = userEvent.setup()
+    const historyState: ProjectState = {
+      ...mayaState,
+      viewingTick: 3,
+    }
+    const { dispatch } = renderWithContext(historyState)
+    await user.click(screen.getByRole('button', { name: /return to live/i }))
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'set-viewing-tick',
+      tick: null,
+    })
+  })
+
+  it('disables advance-tick button when viewing history', () => {
+    const historyState: ProjectState = {
+      ...mayaState,
+      viewingTick: 3,
+    }
+    renderWithContext(historyState)
+    const advanceButton = screen.getByTitle('Advance one tick')
+    expect(advanceButton).toBeDisabled()
+  })
+
+  it('disables auto-simulate button when viewing history', () => {
+    const historyState: ProjectState = {
+      ...mayaState,
+      viewingTick: 3,
+    }
+    renderWithContext(historyState)
+    const autoButton = screen.getByTitle(/simulate/i)
+    expect(autoButton).toBeDisabled()
+  })
+
+  it('advance-tick and auto-simulate are enabled when at live (viewingTick null)', () => {
+    renderWithContext(mayaState)
+    const advanceButton = screen.getByTitle('Advance one tick')
+    const autoButton = screen.getByTitle(/simulate/i)
+    expect(advanceButton).not.toBeDisabled()
+    expect(autoButton).not.toBeDisabled()
+  })
 })
