@@ -1,0 +1,4 @@
+# Prevent Claude from reading secrets
+.env
+server/.env
+**/.env

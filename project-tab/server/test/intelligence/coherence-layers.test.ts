@@ -134,9 +134,9 @@ describe('CoherenceMonitor — config', () => {
     const monitor = new CoherenceMonitor()
     const config = monitor.getConfig()
     expect(config.layer1ScanIntervalTicks).toBe(10)
-    expect(config.layer1PromotionThreshold).toBe(0.85)
+    expect(config.layer1PromotionThreshold).toBe(0.75)
     expect(config.layer1MaxArtifactsPerScan).toBe(500)
-    expect(config.layer2MaxReviewsPerHour).toBe(10)
+    expect(config.layer2MaxReviewsPerHour).toBe(30)
     expect(config.enableLayer2).toBe(false)
   })
 
@@ -149,7 +149,7 @@ describe('CoherenceMonitor — config', () => {
     expect(config.layer1ScanIntervalTicks).toBe(5)
     expect(config.enableLayer2).toBe(true)
     // Defaults preserved
-    expect(config.layer1PromotionThreshold).toBe(0.85)
+    expect(config.layer1PromotionThreshold).toBe(0.75)
   })
 })
 
@@ -899,8 +899,13 @@ describe('CoherenceMonitor — Layer 1c sweep', () => {
 
     expect(sweepService.callCount).toBe(1)
     expect(emitted).toHaveLength(1)
+    expect(emitted[0].source).toBe('sweep')
+    expect(emitted[0].sweepExplanation).toBe('LLM detected duplicated function')
     expect(monitor.isLayer1cDirty()).toBe(false)
     expect(monitor.getLastLayer1cSweepTick()).toBe(10)
+    // Without enableLayer2, events are emitted directly (backward compat)
+    const issues = monitor.getDetectedIssues()
+    expect(issues.some(i => i.title.includes('Layer 1c sweep issue'))).toBe(true)
   })
 
   it('skips when corpus exceeds token limit', async () => {
@@ -1000,5 +1005,159 @@ describe('CoherenceMonitor — Layer 1c sweep', () => {
 
     expect(monitor.isLayer1cDirty()).toBe(true)
     expect(monitor.getLastLayer1cSweepTick()).toBe(0)
+  })
+
+  it('sweep candidates flow through Layer 2 review', async () => {
+    const monitor = new CoherenceMonitor({
+      enableLayer1c: true,
+      enableLayer2: true,
+      layer1cScanIntervalTicks: 1,
+      layer2MaxReviewsPerHour: 100,
+    })
+    const sweepService = new MockSweepService([
+      {
+        artifactIdA: 'art-a',
+        artifactIdB: 'art-b',
+        category: 'duplication',
+        severity: 'high',
+        explanation: 'Duplicated auth logic',
+        notifyAgentIds: [],
+      },
+    ])
+    const reviewService = new MockCoherenceReviewService()
+    monitor.setSweepService(sweepService)
+    monitor.setReviewService(reviewService)
+
+    const artA = makeArtifact({
+      artifactId: 'art-a',
+      workstream: 'ws-a',
+      provenance: { createdBy: 'agent-1', createdAt: new Date().toISOString() }
+    })
+    const artB = makeArtifact({
+      artifactId: 'art-b',
+      workstream: 'ws-b',
+      provenance: { createdBy: 'agent-2', createdAt: new Date().toISOString() }
+    })
+    monitor.processArtifact(artA)
+    monitor.processArtifact(artB)
+
+    // Sweep produces candidates (not events) when Layer 2 is enabled
+    const candidates = await monitor.runLayer1cSweep(
+      1,
+      () => [artA, artB],
+      () => 'shared auth code'
+    )
+    expect(candidates).toHaveLength(1)
+    expect(candidates[0].promotedToLayer2).toBe(true)
+    expect(candidates[0].source).toBe('sweep')
+    // No events emitted yet — they wait for Layer 2
+    expect(monitor.getDetectedIssues()).toHaveLength(0)
+
+    // Layer 2 reviews the sweep candidate
+    const results = await monitor.runLayer2Review(() => 'shared auth code')
+    expect(reviewService.callCount).toBe(1)
+    expect(results).toHaveLength(1)
+    expect(results[0].confirmed).toBe(true)
+
+    // Now an event is emitted
+    const issues = monitor.getDetectedIssues()
+    expect(issues).toHaveLength(1)
+    expect(issues[0].title).toContain('Confirmed')
+  })
+
+  it('likely confidence becomes advisory event', async () => {
+    const monitor = new CoherenceMonitor({
+      enableLayer1c: true,
+      enableLayer2: true,
+      layer1cScanIntervalTicks: 1,
+      layer2MaxReviewsPerHour: 100,
+    })
+    const sweepService = new MockSweepService([
+      {
+        artifactIdA: 'art-a',
+        artifactIdB: 'art-b',
+        category: 'duplication',
+        severity: 'high',
+        explanation: 'Possible overlap',
+        notifyAgentIds: [],
+      },
+    ])
+    const reviewService = new MockCoherenceReviewService()
+    reviewService.registerResponse('candidate-1', {
+      confirmed: true,
+      confidence: 'likely',
+      explanation: 'Probable issue',
+    })
+    monitor.setSweepService(sweepService)
+    monitor.setReviewService(reviewService)
+
+    const artA = makeArtifact({
+      artifactId: 'art-a',
+      workstream: 'ws-a',
+      provenance: { createdBy: 'agent-1', createdAt: new Date().toISOString() }
+    })
+    const artB = makeArtifact({
+      artifactId: 'art-b',
+      workstream: 'ws-b',
+      provenance: { createdBy: 'agent-2', createdAt: new Date().toISOString() }
+    })
+    monitor.processArtifact(artA)
+    monitor.processArtifact(artB)
+
+    await monitor.runLayer1cSweep(1, () => [artA, artB], () => 'content')
+    await monitor.runLayer2Review(() => 'content')
+
+    const issues = monitor.getDetectedIssues()
+    expect(issues).toHaveLength(1)
+    expect(issues[0].severity).toBe('low')
+    expect(issues[0].title).toContain('Advisory')
+  })
+
+  it('Layer 1c emits directly when Layer 2 disabled (backward compat)', async () => {
+    const monitor = new CoherenceMonitor({
+      enableLayer1c: true,
+      enableLayer2: false,
+      layer1cScanIntervalTicks: 1,
+    })
+    const sweepService = new MockSweepService([
+      {
+        artifactIdA: 'art-a',
+        artifactIdB: 'art-b',
+        category: 'contradiction',
+        severity: 'medium',
+        explanation: 'Contradictory config values',
+        notifyAgentIds: [],
+      },
+    ])
+    monitor.setSweepService(sweepService)
+
+    const artA = makeArtifact({
+      artifactId: 'art-a',
+      workstream: 'ws-a',
+      provenance: { createdBy: 'agent-1', createdAt: new Date().toISOString() }
+    })
+    const artB = makeArtifact({
+      artifactId: 'art-b',
+      workstream: 'ws-b',
+      provenance: { createdBy: 'agent-2', createdAt: new Date().toISOString() }
+    })
+    monitor.processArtifact(artA)
+    monitor.processArtifact(artB)
+
+    const candidates = await monitor.runLayer1cSweep(
+      1,
+      () => [artA, artB],
+      () => 'config content'
+    )
+
+    // Returns candidates
+    expect(candidates).toHaveLength(1)
+    expect(candidates[0].source).toBe('sweep')
+    expect(candidates[0].promotedToLayer2).toBe(false)
+
+    // Events emitted directly (no Layer 2 gating)
+    const issues = monitor.getDetectedIssues()
+    expect(issues.some(i => i.title.includes('Layer 1c sweep issue'))).toBe(true)
+    expect(issues.some(i => i.category === 'contradiction')).toBe(true)
   })
 })

@@ -1,6 +1,7 @@
 import type { CoherenceCategory, Severity } from '../types/events'
 import {
   buildReviewPrompt,
+  type ConfidenceLevel,
   type CoherenceCandidate,
   type CoherenceReviewRequest,
   type CoherenceReviewResult,
@@ -19,6 +20,8 @@ export interface LlmReviewConfig {
   temperature: number
   maxRetries: number
   retryBaseMs: number
+  /** Enable adaptive thinking for Anthropic provider. Default: true. */
+  enableThinking: boolean
   /** Optional overrides used by tests. */
   fetchImpl?: typeof fetch
   sleepFn?: (ms: number) => Promise<void>
@@ -26,11 +29,12 @@ export interface LlmReviewConfig {
 
 const DEFAULT_CONFIG: Omit<LlmReviewConfig, 'apiKey'> = {
   provider: 'anthropic',
-  model: 'claude-sonnet-4-5-20250929',
-  maxTokens: 2048,
+  model: 'claude-sonnet-4-6',
+  maxTokens: 16000,
   temperature: 0,
   maxRetries: 3,
   retryBaseMs: 1000,
+  enableThinking: true,
 }
 
 interface ParsedReviewEntry {
@@ -38,6 +42,7 @@ interface ParsedReviewEntry {
   confirmed: boolean
   category?: CoherenceCategory
   severity?: Severity
+  confidence?: ConfidenceLevel
   explanation: string
   suggestedResolution?: string
   notifyAgentIds: string[]
@@ -48,6 +53,7 @@ interface ParsedSweepEntry {
   artifactIdB: string
   category?: CoherenceCategory
   severity?: Severity
+  confidence?: ConfidenceLevel
   explanation: string
   suggestedResolution?: string
   notifyAgentIds: string[]
@@ -106,6 +112,7 @@ export class LlmReviewService implements CoherenceReviewService, LlmSweepService
         confirmed: entry.confirmed,
         category: entry.category ?? candidate.candidateCategory,
         severity: entry.severity ?? 'medium',
+        confidence: entry.confidence,
         explanation: entry.explanation,
         suggestedResolution: entry.suggestedResolution,
         notifyAgentIds: entry.notifyAgentIds,
@@ -117,7 +124,7 @@ export class LlmReviewService implements CoherenceReviewService, LlmSweepService
     if (request.artifacts.length === 0) return []
 
     const prompt = request.prompt || buildLayer1cPrompt(request.artifacts)
-    const raw = await this.requestTextCompletion(prompt, request.model)
+    const raw = await this.requestTextCompletion(prompt, request.model, true)
     const parsed = parseSweepResults(raw)
     if (!parsed) {
       return []
@@ -136,6 +143,7 @@ export class LlmReviewService implements CoherenceReviewService, LlmSweepService
         artifactIdB: entry.artifactIdB,
         category: entry.category ?? 'duplication',
         severity: entry.severity ?? 'medium',
+        confidence: entry.confidence,
         explanation: entry.explanation,
         suggestedResolution: entry.suggestedResolution,
         notifyAgentIds: entry.notifyAgentIds,
@@ -145,10 +153,10 @@ export class LlmReviewService implements CoherenceReviewService, LlmSweepService
     return issues
   }
 
-  private async requestTextCompletion(prompt: string, modelOverride?: string): Promise<string> {
+  private async requestTextCompletion(prompt: string, modelOverride?: string, disableThinking?: boolean): Promise<string> {
     let attempt = 0
     while (attempt <= this.config.maxRetries) {
-      const response = await this.fetchProvider(prompt, modelOverride)
+      const response = await this.fetchProvider(prompt, modelOverride, disableThinking)
       if (response.ok) {
         return this.extractCompletionText(await response.json() as Record<string, unknown>)
       }
@@ -167,14 +175,28 @@ export class LlmReviewService implements CoherenceReviewService, LlmSweepService
     throw new Error('LLM request failed after retries')
   }
 
-  private fetchProvider(prompt: string, modelOverride?: string): Promise<Response> {
+  private fetchProvider(prompt: string, modelOverride?: string, disableThinking?: boolean): Promise<Response> {
     if (this.config.provider === 'anthropic') {
-      return this.fetchAnthropic(prompt, modelOverride)
+      return this.fetchAnthropic(prompt, modelOverride, disableThinking)
     }
-    return this.fetchOpenAi(prompt, modelOverride)
+    return this.fetchOpenAi(prompt, modelOverride, disableThinking)
   }
 
-  private fetchAnthropic(prompt: string, modelOverride?: string): Promise<Response> {
+  private fetchAnthropic(prompt: string, modelOverride?: string, disableThinking?: boolean): Promise<Response> {
+    const body: Record<string, unknown> = {
+      model: modelOverride ?? this.config.model,
+      max_tokens: this.config.maxTokens,
+      messages: [{ role: 'user', content: prompt }],
+    }
+
+    const useThinking = this.config.enableThinking && !disableThinking
+    if (useThinking) {
+      // Adaptive thinking — temperature must not be set
+      body.thinking = { type: 'adaptive' }
+    } else {
+      body.temperature = this.config.temperature
+    }
+
     return this.fetchImpl('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -182,28 +204,37 @@ export class LlmReviewService implements CoherenceReviewService, LlmSweepService
         'x-api-key': this.config.apiKey,
         'anthropic-version': '2023-06-01',
       },
-      body: JSON.stringify({
-        model: modelOverride ?? this.config.model,
-        max_tokens: this.config.maxTokens,
-        temperature: this.config.temperature,
-        messages: [{ role: 'user', content: prompt }],
-      }),
+      body: JSON.stringify(body),
     })
   }
 
-  private fetchOpenAi(prompt: string, modelOverride?: string): Promise<Response> {
+  private fetchOpenAi(prompt: string, modelOverride?: string, disableThinking?: boolean): Promise<Response> {
+    const useThinking = this.config.enableThinking && !disableThinking
+    const body: Record<string, unknown> = {
+      model: modelOverride ?? this.config.model,
+      messages: [{ role: 'user', content: prompt }],
+    }
+
+    // GPT-5.2 requires max_completion_tokens (not max_tokens)
+    const isGpt5 = (modelOverride ?? this.config.model).startsWith('gpt-5')
+    if (useThinking) {
+      body.reasoning_effort = 'medium'
+      body.max_completion_tokens = this.config.maxTokens
+    } else if (isGpt5) {
+      body.temperature = this.config.temperature
+      body.max_completion_tokens = this.config.maxTokens
+    } else {
+      body.temperature = this.config.temperature
+      body.max_tokens = this.config.maxTokens
+    }
+
     return this.fetchImpl('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${this.config.apiKey}`,
       },
-      body: JSON.stringify({
-        model: modelOverride ?? this.config.model,
-        temperature: this.config.temperature,
-        max_tokens: this.config.maxTokens,
-        messages: [{ role: 'user', content: prompt }],
-      }),
+      body: JSON.stringify(body),
     })
   }
 
@@ -215,6 +246,8 @@ export class LlmReviewService implements CoherenceReviewService, LlmSweepService
           .map((item) => {
             if (!item || typeof item !== 'object') return ''
             const record = item as Record<string, unknown>
+            // Skip thinking blocks — only extract text blocks
+            if (record.type !== undefined && record.type !== 'text') return ''
             return typeof record.text === 'string' ? record.text : ''
           })
           .filter(Boolean)
@@ -270,8 +303,20 @@ export function buildLayer1cPrompt(artifacts: LlmSweepArtifact[]): string {
     '- Contradictory assumptions or decisions',
     '- API contracts that do not match between consumer and producer',
     '',
+    'DO NOT flag these as issues — they are normal and expected:',
+    '- Documentation that references or describes code from another workstream',
+    '- Security docs discussing authentication code — that is documentation, not duplication',
+    '- Deployment docs referencing infrastructure configuration — that is documentation',
+    '- Different workstreams having validation for their own domain',
+    '- Intentional environment-specific differences (e.g., dev vs prod settings)',
+    '- Test files that mirror production code structure',
+    '',
+    'If no issues are found, return an empty array: []',
+    '',
     'Return a JSON array. Each object must include:',
-    '{"artifactIdA":"...","artifactIdB":"...","category":"duplication|contradiction|gap|dependency_violation","severity":"low|medium|high|critical","explanation":"...","suggestedResolution":"...","notifyAgentIds":[]}',
+    '{"artifactIdA":"...","artifactIdB":"...","category":"duplication|contradiction|gap|dependency_violation","severity":"low|medium|high|critical","confidence":"high|likely|low","explanation":"...","suggestedResolution":"...","notifyAgentIds":[]}',
+    '',
+    `Valid artifact IDs: ${artifacts.map(a => a.artifactId).join(', ')}`,
     '',
   ]
 
@@ -317,6 +362,7 @@ function parseReviewResults(raw: string): ParsedReviewEntry[] | null {
       confirmed: record.confirmed,
       category: coerceCategory(record.category),
       severity: coerceSeverity(record.severity),
+      confidence: coerceConfidence(record.confidence),
       explanation: record.explanation,
       suggestedResolution: typeof record.suggestedResolution === 'string' ? record.suggestedResolution : undefined,
       notifyAgentIds: Array.isArray(record.notifyAgentIds)
@@ -351,6 +397,7 @@ function parseSweepResults(raw: string): ParsedSweepEntry[] | null {
       artifactIdB,
       category: coerceCategory(record.category),
       severity: coerceSeverity(record.severity),
+      confidence: coerceConfidence(record.confidence),
       explanation: record.explanation,
       suggestedResolution: typeof record.suggestedResolution === 'string' ? record.suggestedResolution : undefined,
       notifyAgentIds: Array.isArray(record.notifyAgentIds)
@@ -406,6 +453,13 @@ function coerceCategory(value: unknown): CoherenceCategory | undefined {
 
 function coerceSeverity(value: unknown): Severity | undefined {
   if (value === 'low' || value === 'medium' || value === 'high' || value === 'critical') {
+    return value
+  }
+  return undefined
+}
+
+function coerceConfidence(value: unknown): ConfidenceLevel | undefined {
+  if (value === 'high' || value === 'likely' || value === 'low') {
     return value
   }
   return undefined

@@ -78,16 +78,19 @@ export function wireEventHandlers(deps: EventHandlerDeps): void {
         )
       }
 
-      if (deps.coherenceMonitor.getConfig().enableLayer2) {
-        await deps.coherenceMonitor.runLayer2Review(contentProvider)
-      }
-
       if (deps.coherenceMonitor.shouldRunLayer1cSweep(tick)) {
         await deps.coherenceMonitor.runLayer1cSweep(
           tick,
           () => deps.knowledgeStore.listArtifacts(),
           contentProvider
         )
+      }
+
+      if (deps.coherenceMonitor.getConfig().enableLayer2) {
+        let batch: import('./intelligence/coherence-review-service').CoherenceReviewResult[]
+        do {
+          batch = await deps.coherenceMonitor.runLayer2Review(contentProvider)
+        } while (batch.length > 0)
       }
 
       flushMonitorIssues(runId)

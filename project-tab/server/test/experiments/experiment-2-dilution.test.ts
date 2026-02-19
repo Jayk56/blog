@@ -6,11 +6,12 @@
  * at each wrapper size.
  *
  * Gate: VOYAGE_API_KEY required
- * API cost: ~$0.02
+ * API cost: ~$0.02 (first run; cached thereafter)
  */
 
 import { describe, it, beforeAll, expect } from 'vitest'
 import { VoyageEmbeddingService } from '../../src/intelligence/voyage-embedding-service.js'
+import { CachedEmbeddingService } from './experiment-cache.js'
 import { cosineSimilarity } from '../../src/intelligence/embedding-service.js'
 import {
   loadCorpus,
@@ -33,16 +34,17 @@ export function validateEmail(email: string): boolean {
 
 describe.skipIf(!process.env.VOYAGE_API_KEY)('Experiment 2: Dilution Curve', () => {
   let corpus: CorpusArtifact[]
-  let voyageService: VoyageEmbeddingService
+  let voyageService: CachedEmbeddingService
   let referenceVector: number[]
   let fillerBlocks: string[]
 
   beforeAll(async () => {
     corpus = loadCorpus()
 
-    voyageService = new VoyageEmbeddingService({
+    const rawVoyage = new VoyageEmbeddingService({
       apiKey: process.env.VOYAGE_API_KEY!,
     })
+    voyageService = new CachedEmbeddingService(rawVoyage, 'voyage-4-lite')
 
     // Embed the target function in isolation
     referenceVector = await voyageService.embed(VALIDATE_EMAIL_SNIPPET)

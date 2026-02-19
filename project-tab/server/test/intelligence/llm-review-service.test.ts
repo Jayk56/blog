@@ -180,4 +180,105 @@ describe('LlmReviewService', () => {
       category: 'duplication',
     })
   })
+
+  it('parses confidence from review response', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      content: [{ type: 'text', text: JSON.stringify([
+        {
+          candidateId: 'c-1',
+          confirmed: true,
+          category: 'duplication',
+          severity: 'high',
+          confidence: 'high',
+          explanation: 'Exact duplicate',
+          notifyAgentIds: [],
+        },
+        {
+          candidateId: 'c-2',
+          confirmed: true,
+          category: 'contradiction',
+          severity: 'medium',
+          confidence: 'likely',
+          explanation: 'Probable issue',
+          notifyAgentIds: [],
+        },
+      ]) }],
+    }), { status: 200 }))
+
+    const service = new LlmReviewService({
+      provider: 'anthropic',
+      apiKey: 'test-key',
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    })
+
+    const result = await service.review(makeRequest())
+
+    expect(result[0].confidence).toBe('high')
+    expect(result[1].confidence).toBe('likely')
+  })
+
+  it('parses confidence from sweep response', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      content: [{ type: 'text', text: JSON.stringify([
+        {
+          artifactIdA: 'a-1',
+          artifactIdB: 'a-2',
+          category: 'duplication',
+          severity: 'medium',
+          confidence: 'low',
+          explanation: 'Possible overlap',
+          notifyAgentIds: [],
+        },
+      ]) }],
+    }), { status: 200 }))
+
+    const service = new LlmReviewService({
+      provider: 'anthropic',
+      apiKey: 'test-key',
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    })
+
+    const issues = await service.sweepCorpus({
+      artifacts: [
+        { artifactId: 'a-1', workstream: 'ws-a', content: 'function a(){}' },
+        { artifactId: 'a-2', workstream: 'ws-b', content: 'function a(){}' },
+      ],
+    })
+
+    expect(issues).toHaveLength(1)
+    expect(issues[0].confidence).toBe('low')
+  })
+
+  it('returns undefined confidence for invalid values', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      content: [{ type: 'text', text: JSON.stringify([
+        {
+          candidateId: 'c-1',
+          confirmed: true,
+          category: 'duplication',
+          severity: 'high',
+          confidence: 'maybe',
+          explanation: 'Invalid confidence',
+          notifyAgentIds: [],
+        },
+        {
+          candidateId: 'c-2',
+          confirmed: true,
+          explanation: 'No confidence field',
+          notifyAgentIds: [],
+        },
+      ]) }],
+    }), { status: 200 }))
+
+    const service = new LlmReviewService({
+      provider: 'anthropic',
+      apiKey: 'test-key',
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    })
+
+    const result = await service.review(makeRequest())
+
+    expect(result[0].confidence).toBeUndefined()
+    expect(result[1].confidence).toBeUndefined()
+  })
 })

@@ -5,11 +5,12 @@
  * pairs to find the optimal precision/recall tradeoff for embedding-based detection.
  *
  * Gate: VOYAGE_API_KEY required
- * API cost: ~$0.05
+ * API cost: ~$0.05 (first run; cached thereafter)
  */
 
 import { describe, it, beforeAll, expect } from 'vitest'
 import { VoyageEmbeddingService } from '../../src/intelligence/voyage-embedding-service.js'
+import { CachedEmbeddingService } from './experiment-cache.js'
 import { cosineSimilarity } from '../../src/intelligence/embedding-service.js'
 import {
   loadCorpus,
@@ -33,9 +34,10 @@ describe.skipIf(!process.env.VOYAGE_API_KEY)('Experiment 1: Threshold Sensitivit
     corpus = loadCorpus()
     groundTruth = loadGroundTruth()
 
-    const voyageService = new VoyageEmbeddingService({
+    const rawVoyage = new VoyageEmbeddingService({
       apiKey: process.env.VOYAGE_API_KEY!,
     })
+    const voyageService = new CachedEmbeddingService(rawVoyage, 'voyage-4-lite')
 
     // Embed all 50 artifacts
     const texts = corpus.map(a => a.content)

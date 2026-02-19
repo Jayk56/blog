@@ -18,6 +18,9 @@ export interface CoherenceCandidate {
   candidateCategory: CoherenceCategory
   detectedAt: string
   promotedToLayer2: boolean
+  source?: 'embedding' | 'content_hash' | 'sweep'
+  sweepExplanation?: string
+  sweepConfidence?: ConfidenceLevel
 }
 
 /** Request payload for a Layer 2 review. */
@@ -26,7 +29,12 @@ export interface CoherenceReviewRequest {
   artifactContents: Map<string, string>
   relevantDecisions: { id: string; title: string; agentId: string }[]
   workstreamBriefs: { id: string; name: string; goals: string[] }[]
+  /** Optional full corpus context — when provided, all artifacts are included in the prompt for richer review. */
+  corpusArtifacts?: { artifactId: string; workstream: string; content: string }[]
 }
+
+/** Confidence level from LLM review. */
+export type ConfidenceLevel = 'high' | 'likely' | 'low'
 
 /** Result from a Layer 2 LLM review of a single candidate. */
 export interface CoherenceReviewResult {
@@ -34,6 +42,7 @@ export interface CoherenceReviewResult {
   confirmed: boolean
   category?: CoherenceCategory
   severity?: Severity
+  confidence?: ConfidenceLevel
   explanation: string
   suggestedResolution?: string
   notifyAgentIds: string[]
@@ -69,6 +78,7 @@ export interface LlmSweepIssue {
   artifactIdB: string
   category: CoherenceCategory
   severity: Severity
+  confidence?: ConfidenceLevel
   explanation: string
   suggestedResolution?: string
   notifyAgentIds: string[]
@@ -149,6 +159,9 @@ export function buildReviewPrompt(request: CoherenceReviewRequest): string {
     sections.push(`- Artifacts: ${candidate.artifactIdA} (${candidate.workstreamA}) <-> ${candidate.artifactIdB} (${candidate.workstreamB})`)
     sections.push(`- Similarity score: ${candidate.similarityScore.toFixed(3)}`)
     sections.push(`- Preliminary category: ${candidate.candidateCategory}`)
+    if (candidate.source === 'sweep' && candidate.sweepExplanation) {
+      sections.push(`- Initial sweep finding: ${candidate.sweepExplanation}`)
+    }
 
     const contentA = request.artifactContents.get(candidate.artifactIdA)
     const contentB = request.artifactContents.get(candidate.artifactIdB)
@@ -160,6 +173,38 @@ export function buildReviewPrompt(request: CoherenceReviewRequest): string {
       sections.push(`\nArtifact B content:\n\`\`\`\n${contentB}\n\`\`\``)
     }
     sections.push('')
+  }
+
+  // Full corpus context (when provided)
+  if (request.corpusArtifacts && request.corpusArtifacts.length > 0) {
+    // Exclude artifacts already shown in candidate pairs to avoid duplication
+    const shownIds = new Set<string>()
+    for (const c of request.candidates) {
+      shownIds.add(c.artifactIdA)
+      shownIds.add(c.artifactIdB)
+    }
+    const additional = request.corpusArtifacts.filter(a => !shownIds.has(a.artifactId))
+    if (additional.length > 0) {
+      const grouped = new Map<string, typeof additional>()
+      for (const a of additional) {
+        const list = grouped.get(a.workstream) ?? []
+        list.push(a)
+        grouped.set(a.workstream, list)
+      }
+      sections.push('## Full Project Context')
+      sections.push('The following artifacts are from the same project. Use them to understand the broader context when reviewing candidates above.')
+      sections.push('')
+      for (const [ws, artifacts] of grouped) {
+        sections.push(`### Workstream: ${ws}`)
+        for (const a of artifacts) {
+          sections.push(`#### ${a.artifactId}`)
+          sections.push('```')
+          sections.push(a.content)
+          sections.push('```')
+          sections.push('')
+        }
+      }
+    }
   }
 
   // Recent decisions
@@ -179,11 +224,17 @@ export function buildReviewPrompt(request: CoherenceReviewRequest): string {
   sections.push('  "confirmed": true/false,')
   sections.push('  "category": "contradiction" | "duplication" | "gap" | "dependency_violation",')
   sections.push('  "severity": "low" | "medium" | "high" | "critical",')
+  sections.push('  "confidence": "high" | "likely" | "low",')
   sections.push('  "explanation": "...",')
   sections.push('  "suggestedResolution": "...",')
   sections.push('  "notifyAgentIds": ["..."]')
   sections.push('}]')
   sections.push('```')
+  sections.push('')
+  sections.push('Confidence levels:')
+  sections.push('- "high": Clear issue requiring resolution')
+  sections.push('- "likely": Probable issue but could be intentional — flag as advisory')
+  sections.push('- "low": Insufficient evidence — dismiss')
 
   return sections.join('\n')
 }
@@ -216,6 +267,7 @@ export class MockCoherenceReviewService implements CoherenceReviewService {
         confirmed: custom?.confirmed ?? true,
         category: custom?.category ?? candidate.candidateCategory,
         severity: custom?.severity ?? 'medium',
+        confidence: custom?.confidence ?? 'high',
         explanation: custom?.explanation ?? `Mock review: artifacts ${candidate.artifactIdA} and ${candidate.artifactIdB} appear to overlap`,
         suggestedResolution: custom?.suggestedResolution ?? 'Consolidate overlapping work',
         notifyAgentIds: custom?.notifyAgentIds ?? []

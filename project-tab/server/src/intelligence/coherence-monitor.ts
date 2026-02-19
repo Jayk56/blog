@@ -16,10 +16,10 @@ export interface CoherenceMonitorConfig {
   /** How often Layer 1 scans run, in ticks (default: 10). */
   layer1ScanIntervalTicks: number
 
-  /** Cosine similarity threshold for promoting to Layer 2 (default: 0.85). */
+  /** Cosine similarity threshold for promoting to Layer 2 (default: 0.75). */
   layer1PromotionThreshold: number
 
-  /** Similarity threshold for auto-emitting advisory issues (default: 0.70). */
+  /** Similarity threshold for auto-emitting advisory issues (default: 0.65). */
   layer1AdvisoryThreshold: number
 
   /** Max artifacts to scan per cycle (default: 500). */
@@ -28,7 +28,7 @@ export interface CoherenceMonitorConfig {
   /** Embedding model name (informational, used by real EmbeddingService). */
   embeddingModel: string
 
-  /** Max Layer 2 reviews per hour (default: 10). */
+  /** Max Layer 2 reviews per hour (default: 30). */
   layer2MaxReviewsPerHour: number
 
   /** Layer 2 model name (informational). */
@@ -48,22 +48,26 @@ export interface CoherenceMonitorConfig {
 
   /** Model name for Layer 1c sweeps. */
   layer1cModel: string
+
+  /** Skip Layer 2 for embedding candidates — auto-emit them as confirmed (default: false). */
+  skipLayer2ForEmbeddings: boolean
 }
 
 /** Default configuration. */
 const DEFAULT_CONFIG: CoherenceMonitorConfig = {
   layer1ScanIntervalTicks: 10,
-  layer1PromotionThreshold: 0.85,
-  layer1AdvisoryThreshold: 0.70,
+  layer1PromotionThreshold: 0.75,
+  layer1AdvisoryThreshold: 0.65,
   layer1MaxArtifactsPerScan: 500,
   embeddingModel: 'text-embedding-3-small',
-  layer2MaxReviewsPerHour: 10,
-  layer2Model: 'claude-sonnet-4-5-20250929',
+  layer2MaxReviewsPerHour: 30,
+  layer2Model: 'claude-sonnet-4-6',
   enableLayer2: false,
   enableLayer1c: false,
   layer1cScanIntervalTicks: 300,
   layer1cMaxCorpusTokens: 200_000,
-  layer1cModel: 'claude-sonnet-4-5-20250929',
+  layer1cModel: 'claude-sonnet-4-6',
+  skipLayer2ForEmbeddings: false,
 }
 
 /** Stored embedding for an artifact. */
@@ -137,6 +141,7 @@ export class CoherenceMonitor {
 
   // --- Artifact content provider (for Layer 2 context assembly) ---
   private artifactContentProvider: ((artifactId: string) => string | undefined) | null = null
+  private corpusArtifacts: { artifactId: string; workstream: string; content: string }[] | null = null
 
   constructor(config: Partial<CoherenceMonitorConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config }
@@ -168,6 +173,11 @@ export class CoherenceMonitor {
   /** Set a function that retrieves artifact content by ID (for Layer 2 context). */
   setArtifactContentProvider(provider: (artifactId: string) => string | undefined): void {
     this.artifactContentProvider = provider
+  }
+
+  /** Set full corpus artifacts for batch Layer 2 review context. */
+  setCorpusArtifacts(artifacts: { artifactId: string; workstream: string; content: string }[]): void {
+    this.corpusArtifacts = artifacts
   }
 
   /** Subscribe to TickService for periodic Layer 1 scans. */
@@ -433,12 +443,19 @@ export class CoherenceMonitor {
     return (currentTick - this.lastLayer1cSweepTick) >= this.config.layer1cScanIntervalTicks
   }
 
-  /** Run Layer 1c full-corpus sweep and emit issues directly. */
+  /**
+   * Run Layer 1c full-corpus sweep.
+   *
+   * When Layer 2 is enabled, produces CoherenceCandidate objects for Layer 2 review.
+   * When Layer 2 is disabled, emits CoherenceEvent objects directly (backward compat).
+   *
+   * @returns Array of new candidates (Layer 2 enabled) or events (Layer 2 disabled)
+   */
   async runLayer1cSweep(
     currentTick: number,
     listArtifacts: () => ArtifactEvent[],
     contentProvider: (artifactId: string) => string | undefined
-  ): Promise<CoherenceEvent[]> {
+  ): Promise<CoherenceCandidate[]> {
     if (!this.shouldRunLayer1cSweep(currentTick)) return []
 
     const artifacts = listArtifacts()
@@ -477,8 +494,15 @@ export class CoherenceMonitor {
     this.lastLayer1cSweepTick = currentTick
     this.layer1cDirty = false
 
-    const emitted: CoherenceEvent[] = []
+    // Build O(1) lookup for corpus artifact IDs and workstreams
+    const artifactById = new Map<string, ArtifactEvent>()
+    for (const a of artifacts) {
+      artifactById.set(a.artifactId, a)
+    }
+
+    const newCandidates: CoherenceCandidate[] = []
     const dedupePairs = new Set<string>()
+
     for (const issue of issues) {
       if (issue.artifactIdA === issue.artifactIdB) continue
 
@@ -487,29 +511,79 @@ export class CoherenceMonitor {
       dedupePairs.add(pairKey)
       if (this.hasExistingIssueForPair(issue.artifactIdA, issue.artifactIdB)) continue
 
-      const artifactA = artifacts.find((a) => a.artifactId === issue.artifactIdA)
-      const artifactB = artifacts.find((a) => a.artifactId === issue.artifactIdB)
+      const artifactA = artifactById.get(issue.artifactIdA)
+      const artifactB = artifactById.get(issue.artifactIdB)
       if (!artifactA || !artifactB) continue
       if (artifactA.workstream === artifactB.workstream) continue
 
-      this.issueCounter += 1
-      const coherenceIssue: CoherenceEvent = {
-        type: 'coherence',
-        agentId: 'system',
-        issueId: `coherence-${this.issueCounter}`,
-        title: `Layer 1c sweep issue: ${issue.artifactIdA} / ${issue.artifactIdB}`,
-        description: issue.explanation,
-        category: issue.category,
-        severity: issue.severity,
-        affectedWorkstreams: [artifactA.workstream, artifactB.workstream],
-        affectedArtifactIds: [issue.artifactIdA, issue.artifactIdB],
+      // Check if embeddings already created a candidate for this pair
+      const existing = this.findCandidateByPair(issue.artifactIdA, issue.artifactIdB)
+      if (existing) {
+        // Update existing candidate with sweep context and promote to Layer 2
+        existing.promotedToLayer2 = true
+        existing.source = existing.source ?? 'sweep'
+        existing.sweepExplanation = issue.explanation
+        existing.sweepConfidence = issue.confidence
+        newCandidates.push(existing)
+        continue
       }
 
-      this.detectedIssues.push(coherenceIssue)
-      emitted.push(coherenceIssue)
+      if (this.config.enableLayer2) {
+        // Layer 2 enabled: create candidate for review
+        this.candidateCounter += 1
+        const candidate: CoherenceCandidate = {
+          candidateId: `candidate-${this.candidateCounter}`,
+          artifactIdA: issue.artifactIdA,
+          artifactIdB: issue.artifactIdB,
+          workstreamA: artifactA.workstream,
+          workstreamB: artifactB.workstream,
+          similarityScore: 0,
+          candidateCategory: issue.category,
+          detectedAt: new Date().toISOString(),
+          promotedToLayer2: true,
+          source: 'sweep',
+          sweepExplanation: issue.explanation,
+          sweepConfidence: issue.confidence,
+        }
+        this.candidates.push(candidate)
+        newCandidates.push(candidate)
+      } else {
+        // Layer 2 disabled: emit directly as CoherenceEvent (backward compat)
+        this.issueCounter += 1
+        const coherenceIssue: CoherenceEvent = {
+          type: 'coherence',
+          agentId: 'system',
+          issueId: `coherence-${this.issueCounter}`,
+          title: `Layer 1c sweep issue: ${issue.artifactIdA} / ${issue.artifactIdB}`,
+          description: issue.explanation,
+          category: issue.category,
+          severity: issue.severity,
+          affectedWorkstreams: [artifactA.workstream, artifactB.workstream],
+          affectedArtifactIds: [issue.artifactIdA, issue.artifactIdB],
+        }
+        this.detectedIssues.push(coherenceIssue)
+
+        // Still return a candidate shape for the caller
+        this.candidateCounter += 1
+        const candidate: CoherenceCandidate = {
+          candidateId: `candidate-${this.candidateCounter}`,
+          artifactIdA: issue.artifactIdA,
+          artifactIdB: issue.artifactIdB,
+          workstreamA: artifactA.workstream,
+          workstreamB: artifactB.workstream,
+          similarityScore: 0,
+          candidateCategory: issue.category,
+          detectedAt: new Date().toISOString(),
+          promotedToLayer2: false,
+          source: 'sweep',
+          sweepExplanation: issue.explanation,
+          sweepConfidence: issue.confidence,
+        }
+        newCandidates.push(candidate)
+      }
     }
 
-    return emitted
+    return newCandidates
   }
 
   // ─── Layer 2: LLM deep review ────────────────────────────────────
@@ -533,11 +607,47 @@ export class CoherenceMonitor {
     const pending = this.getPendingLayer2Candidates()
     if (pending.length === 0) return []
 
-    const now = Date.now()
-    if (!this.rateLimiter.canReview(now)) return []
+    // When skipLayer2ForEmbeddings is enabled, auto-emit embedding candidates
+    // and only send sweep candidates through L2 review
+    const embeddingCandidates = this.config.skipLayer2ForEmbeddings
+      ? pending.filter(c => c.source !== 'sweep')
+      : []
+    const sweepCandidates = this.config.skipLayer2ForEmbeddings
+      ? pending.filter(c => c.source === 'sweep')
+      : pending
 
-    // Batch up to 5
-    const batch = pending.slice(0, 5)
+    const autoResults: CoherenceReviewResult[] = []
+    for (const candidate of embeddingCandidates) {
+      this.issueCounter++
+      const issue: CoherenceEvent = {
+        type: 'coherence',
+        agentId: 'system',
+        issueId: `coherence-${this.issueCounter}`,
+        title: `Detected: ${candidate.candidateCategory} between ${candidate.workstreamA} and ${candidate.workstreamB}`,
+        description: `Embedding similarity ${candidate.similarityScore.toFixed(3)}`,
+        category: candidate.candidateCategory,
+        severity: 'medium',
+        affectedWorkstreams: [candidate.workstreamA, candidate.workstreamB],
+        affectedArtifactIds: [candidate.artifactIdA, candidate.artifactIdB]
+      }
+      this.detectedIssues.push(issue)
+      this.dismissedCandidateIds.add(candidate.candidateId)
+      autoResults.push({
+        candidateId: candidate.candidateId,
+        confirmed: true,
+        confidence: 'high',
+        explanation: issue.description,
+        notifyAgentIds: [],
+      })
+    }
+
+    if (sweepCandidates.length === 0) return autoResults
+
+    const now = Date.now()
+    if (!this.rateLimiter.canReview(now)) return autoResults
+
+    // Batch up to 5 sweep candidates for L2 review
+    const batch = sweepCandidates.slice(0, 5)
 
     // Assemble artifact contents
     const artifactContents = new Map<string, string>()
@@ -548,11 +658,12 @@ export class CoherenceMonitor {
       if (contentB) artifactContents.set(candidate.artifactIdB, contentB)
     }
 
-    const request = {
+    const request: import('./coherence-review-service').CoherenceReviewRequest = {
       candidates: batch,
       artifactContents,
       relevantDecisions: [],
-      workstreamBriefs: []
+      workstreamBriefs: [],
+      corpusArtifacts: this.corpusArtifacts ?? undefined,
     }
 
     this.rateLimiter.record(now)
@@ -561,19 +672,21 @@ export class CoherenceMonitor {
     for (const result of results) {
       this.reviewResults.push(result)
 
-      if (result.confirmed) {
-        // Emit a CoherenceEvent for confirmed issues
+      if (result.confirmed && result.confidence !== 'low') {
         const candidate = batch.find((c) => c.candidateId === result.candidateId)
         if (candidate) {
           this.issueCounter++
+          const isAdvisory = result.confidence === 'likely'
           const issue: CoherenceEvent = {
             type: 'coherence',
             agentId: 'system',
             issueId: `coherence-${this.issueCounter}`,
-            title: `Confirmed: ${result.category ?? candidate.candidateCategory} between ${candidate.workstreamA} and ${candidate.workstreamB}`,
+            title: isAdvisory
+              ? `Advisory: ${result.category ?? candidate.candidateCategory} between ${candidate.workstreamA} and ${candidate.workstreamB}`
+              : `Confirmed: ${result.category ?? candidate.candidateCategory} between ${candidate.workstreamA} and ${candidate.workstreamB}`,
             description: result.explanation,
             category: result.category ?? candidate.candidateCategory,
-            severity: result.severity ?? 'medium',
+            severity: isAdvisory ? 'low' : (result.severity ?? 'medium'),
             affectedWorkstreams: [candidate.workstreamA, candidate.workstreamB],
             affectedArtifactIds: [candidate.artifactIdA, candidate.artifactIdB]
           }
@@ -585,7 +698,7 @@ export class CoherenceMonitor {
       this.dismissedCandidateIds.add(result.candidateId)
     }
 
-    return results
+    return [...autoResults, ...results]
   }
 
   /** Returns all Layer 2 review results. */
@@ -713,9 +826,21 @@ export class CoherenceMonitor {
       '- Contradictory assumptions or decisions',
       '- API contracts that do not match between consumer and producer',
       '',
+      'DO NOT flag these as issues — they are normal and expected:',
+      '- Documentation that references or describes code from another workstream',
+      '- Security docs discussing authentication code — that is documentation, not duplication',
+      '- Deployment docs referencing infrastructure configuration — that is documentation',
+      '- Different workstreams having validation for their own domain',
+      '- Intentional environment-specific differences (e.g., dev vs prod settings)',
+      '- Test files that mirror production code structure',
+      '',
+      'If no issues are found, return an empty array: []',
+      '',
       'Return ONLY a JSON array. Each object must include:',
-      '{\"artifactIdA\":\"...\",\"artifactIdB\":\"...\",\"category\":\"duplication|contradiction|gap|dependency_violation\",\"severity\":\"low|medium|high|critical\",\"explanation\":\"...\",\"suggestedResolution\":\"...\",\"notifyAgentIds\":[]}',
-      ''
+      '{\"artifactIdA\":\"...\",\"artifactIdB\":\"...\",\"category\":\"duplication|contradiction|gap|dependency_violation\",\"severity\":\"low|medium|high|critical\",\"confidence\":\"high|likely|low\",\"explanation\":\"...\",\"suggestedResolution\":\"...\",\"notifyAgentIds\":[]}',
+      '',
+      `Valid artifact IDs: ${artifacts.map(a => a.artifactId).join(', ')}`,
+      '',
     ]
 
     for (const [workstream, entries] of grouped) {

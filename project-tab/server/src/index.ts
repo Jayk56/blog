@@ -41,7 +41,7 @@ const voyageApiKey = process.env.VOYAGE_API_KEY
 const voyageEmbeddingModel = (process.env.VOYAGE_EMBEDDING_MODEL ?? 'voyage-4-lite') as 'voyage-4-lite' | 'voyage-code-3' | 'voyage-4'
 const anthropicApiKey = process.env.ANTHROPIC_API_KEY
 const openAiApiKey = process.env.OPENAI_API_KEY
-const defaultReviewModel = anthropicApiKey ? 'claude-sonnet-4-5-20250929' : 'gpt-4o-mini'
+const defaultReviewModel = anthropicApiKey ? 'claude-sonnet-4-6' : 'gpt-5.2'
 const coherenceReviewModel = process.env.COHERENCE_REVIEW_MODEL ?? defaultReviewModel
 const enableLayer2 = process.env.ENABLE_LAYER2 === 'true' || Boolean(anthropicApiKey || openAiApiKey)
 const enableLayer1c = process.env.ENABLE_LAYER1C === 'true'
