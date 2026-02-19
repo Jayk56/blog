@@ -29,6 +29,24 @@ interface AgentInjectionState {
   injectionTimestamps: number[]
   /** Whether at least one injection has been delivered. */
   hasEverInjected: boolean
+  /** Recent injection records pending/ready for audit flush. */
+  recentInjections: TrackedInjectionRecord[]
+}
+
+/** Persisted injection record for downstream utility analysis. */
+export interface InjectionRecord {
+  tick: number
+  reason: 'periodic' | 'reactive' | 'staleness' | 'brief_updated'
+  priority: ContextInjection['priority']
+  snapshotVersion: number
+  artifactIdsIncluded: string[]
+  agentEventsInWindow: number
+  artifactIdsReferencedInWindow: string[]
+}
+
+interface TrackedInjectionRecord extends InjectionRecord {
+  windowEndsAtTick: number
+  flushed: boolean
 }
 
 /**
@@ -89,6 +107,7 @@ const SEVERITY_ORDER: Record<Severity, number> = {
  */
 export class ContextInjectionService {
   private readonly agents = new Map<string, AgentInjectionState>()
+  private readonly injectionWindowTicks = 20
   private tickHandler: ((tick: number) => void) | null = null
   private busSubscriptionId: string | null = null
 
@@ -132,6 +151,7 @@ export class ContextInjectionService {
       stalenessCounter: 0,
       injectionTimestamps: [],
       hasEverInjected: false,
+      recentInjections: [],
     })
   }
 
@@ -145,6 +165,7 @@ export class ContextInjectionService {
 
   /** Remove an agent from injection tracking. */
   removeAgent(agentId: string): void {
+    this.flushInjectionRecords(agentId)
     this.agents.delete(agentId)
   }
 
@@ -187,6 +208,8 @@ export class ContextInjectionService {
           this.scheduleInjection(agentId, 'staleness', 'recommended')
         }
       }
+
+      this.flushCompletedInjections(agentId, tick)
     }
   }
 
@@ -199,6 +222,8 @@ export class ContextInjectionService {
     // For each tracked agent, check if this event is in their readable
     // workstreams, and if so, bump staleness and check reactive triggers.
     for (const [agentId, state] of this.agents) {
+      this.recordPostInjectionEvent(agentId, state, envelope)
+
       // Skip events from the agent itself (they already know about their own events)
       if (agentId === sourceAgentId) continue
 
@@ -308,6 +333,17 @@ export class ContextInjectionService {
     state.stalenessCounter = 0
     state.injectionTimestamps.push(now)
     state.hasEverInjected = true
+    state.recentInjections.push({
+      tick: currentTick,
+      reason,
+      priority,
+      snapshotVersion: snapshot.version,
+      artifactIdsIncluded: snapshot.artifactIndex.map((artifact) => artifact.id),
+      agentEventsInWindow: 0,
+      artifactIdsReferencedInWindow: [],
+      windowEndsAtTick: currentTick + this.injectionWindowTicks,
+      flushed: false,
+    })
 
     return true
   }
@@ -320,7 +356,115 @@ export class ContextInjectionService {
     return this.scheduleInjection(agentId, 'brief_updated', 'required')
   }
 
+  /** Flush completed injection records for an agent and return flushed copies. */
+  flushInjectionRecords(agentId: string): InjectionRecord[] {
+    const state = this.agents.get(agentId)
+    if (!state) return []
+
+    const flushed: InjectionRecord[] = []
+    for (const record of state.recentInjections) {
+      if (record.flushed) continue
+      const copy = this.flushSingleRecord(agentId, record)
+      if (!copy) continue
+      flushed.push(copy)
+    }
+
+    return flushed
+  }
+
   // ── Helpers ─────────────────────────────────────────────────────
+
+  private flushCompletedInjections(agentId: string, currentTick: number): void {
+    const state = this.agents.get(agentId)
+    if (!state) return
+
+    const flushed: InjectionRecord[] = []
+    for (const record of state.recentInjections) {
+      if (record.flushed) continue
+      if (currentTick <= record.windowEndsAtTick) continue
+      const copy = this.flushSingleRecord(agentId, record)
+      if (!copy) continue
+      flushed.push(copy)
+    }
+    if (flushed.length === 0) return
+  }
+
+  private recordPostInjectionEvent(
+    agentId: string,
+    state: AgentInjectionState,
+    envelope: EventEnvelope
+  ): void {
+    if (envelope.event.agentId !== agentId) return
+
+    const currentTick = this.tickService.currentTick()
+    const referencedArtifacts = this.extractReferencedArtifactIds(envelope)
+
+    for (const record of state.recentInjections) {
+      if (record.flushed) continue
+      if (currentTick > record.windowEndsAtTick) continue
+      if (currentTick < record.tick) continue
+
+      record.agentEventsInWindow += 1
+      for (const artifactId of referencedArtifacts) {
+        if (!record.artifactIdsReferencedInWindow.includes(artifactId)) {
+          record.artifactIdsReferencedInWindow.push(artifactId)
+        }
+      }
+    }
+  }
+
+  private extractReferencedArtifactIds(envelope: EventEnvelope): string[] {
+    const event = envelope.event
+
+    if (event.type === 'artifact') {
+      return [event.artifactId]
+    }
+    if (event.type === 'completion') {
+      return [...event.artifactsProduced]
+    }
+    if (event.type === 'decision') {
+      if (event.subtype === 'option') {
+        return [...event.affectedArtifactIds]
+      }
+      return [...(event.affectedArtifactIds ?? [])]
+    }
+    if (event.type === 'coherence') {
+      return [...event.affectedArtifactIds]
+    }
+
+    return []
+  }
+
+  private flushSingleRecord(agentId: string, record: TrackedInjectionRecord): InjectionRecord | null {
+    if (!this.knowledgeStore.appendAuditLog) {
+      return null
+    }
+
+    const copy: InjectionRecord = {
+      tick: record.tick,
+      reason: record.reason,
+      priority: record.priority,
+      snapshotVersion: record.snapshotVersion,
+      artifactIdsIncluded: [...record.artifactIdsIncluded],
+      agentEventsInWindow: record.agentEventsInWindow,
+      artifactIdsReferencedInWindow: [...record.artifactIdsReferencedInWindow],
+    }
+
+    try {
+      this.knowledgeStore.appendAuditLog(
+        'context_injection',
+        agentId,
+        'window_complete',
+        agentId,
+        copy
+      )
+      record.flushed = true
+    } catch {
+      return null
+    }
+
+    return copy
+  }
 
   /** Check if an event matches any of the reactive triggers for an agent. */
   private matchesReactiveTrigger(

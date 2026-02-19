@@ -183,9 +183,17 @@ describe('GET /api/tool-gate/stats', () => {
       subtype: 'option',
       agentId: 'agent-1',
       decisionId: 'd-option',
-      prompt: 'Which approach?',
-      options: [{ id: 'a', label: 'Option A' }, { id: 'b', label: 'Option B' }],
+      title: 'Which approach?',
+      summary: 'Choose an implementation approach',
+      options: [
+        { id: 'a', label: 'Option A', description: 'Approach A' },
+        { id: 'b', label: 'Option B', description: 'Approach B' }
+      ],
       severity: 'medium',
+      confidence: 0.8,
+      blastRadius: 'small',
+      affectedArtifactIds: [],
+      requiresRationale: false,
     }, tickService.currentTick())
 
     // Enqueue a tool_approval decision

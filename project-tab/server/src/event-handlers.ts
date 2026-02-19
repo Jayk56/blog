@@ -27,10 +27,78 @@ type ClassificationDeps = Pick<EventHandlerDeps, 'knowledgeStore' | 'classifier'
 type DecisionDeps = Pick<EventHandlerDeps, 'decisionQueue' | 'tickService' | 'registry' | 'gateway' | 'checkpointStore'>
 type ArtifactDeps = Pick<EventHandlerDeps, 'knowledgeStore' | 'coherenceMonitor' | 'classifier' | 'wsHub'>
 type LifecycleDeps = Pick<EventHandlerDeps, 'knowledgeStore' | 'registry'>
-type CompletionDeps = Pick<EventHandlerDeps, 'trustEngine' | 'tickService' | 'wsHub'>
-type ErrorDeps = Pick<EventHandlerDeps, 'trustEngine' | 'tickService' | 'wsHub'>
+type CompletionDeps = Pick<EventHandlerDeps, 'trustEngine' | 'tickService' | 'wsHub' | 'knowledgeStore'>
+type ErrorDeps = Pick<EventHandlerDeps, 'trustEngine' | 'tickService' | 'wsHub' | 'knowledgeStore'>
 
 export function wireEventHandlers(deps: EventHandlerDeps): void {
+  const persistedIssueIds = new Set<string>()
+  let coherenceRunInFlight = false
+
+  const publishCoherenceIssue = (issue: import('./types/events').CoherenceEvent, runId: string): void => {
+    if (persistedIssueIds.has(issue.issueId)) return
+    persistedIssueIds.add(issue.issueId)
+
+    deps.knowledgeStore.storeCoherenceIssue(issue)
+
+    const coherenceEnvelope: EventEnvelope = {
+      sourceEventId: `coherence-${issue.issueId}`,
+      sourceSequence: -1,
+      sourceOccurredAt: new Date().toISOString(),
+      runId,
+      ingestedAt: new Date().toISOString(),
+      event: issue,
+    }
+    const classified = deps.classifier.classify(coherenceEnvelope)
+    deps.wsHub.publishClassifiedEvent(classified)
+  }
+
+  const flushMonitorIssues = (runId: string): void => {
+    for (const issue of deps.coherenceMonitor.getDetectedIssues()) {
+      publishCoherenceIssue(issue, runId)
+    }
+  }
+
+  const contentProvider = (artifactId: string): string | undefined => {
+    const artifact = deps.knowledgeStore.getArtifact(artifactId)
+    if (!artifact) return undefined
+    const stored = deps.knowledgeStore.getArtifactContent(artifact.agentId, artifactId)
+    if (stored) return stored.content
+    return undefined
+  }
+
+  const runCoherencePipeline = async (tick: number, runId: string): Promise<void> => {
+    if (coherenceRunInFlight) return
+    coherenceRunInFlight = true
+    try {
+      if (deps.coherenceMonitor.shouldRunLayer1Scan(tick)) {
+        await deps.coherenceMonitor.runLayer1Scan(
+          tick,
+          (artifactId) => deps.knowledgeStore.getArtifact(artifactId),
+          contentProvider
+        )
+      }
+
+      if (deps.coherenceMonitor.getConfig().enableLayer2) {
+        await deps.coherenceMonitor.runLayer2Review(contentProvider)
+      }
+
+      if (deps.coherenceMonitor.shouldRunLayer1cSweep(tick)) {
+        await deps.coherenceMonitor.runLayer1cSweep(
+          tick,
+          () => deps.knowledgeStore.listArtifacts(),
+          contentProvider
+        )
+      }
+
+      flushMonitorIssues(runId)
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('[coherence] pipeline error:', error instanceof Error ? error.message : String(error))
+    } finally {
+      coherenceRunInFlight = false
+    }
+  }
+
   deps.eventBus.subscribe({}, (envelope) => {
     handleClassificationAndFanOut(envelope, deps)
   })
@@ -40,7 +108,8 @@ export function wireEventHandlers(deps: EventHandlerDeps): void {
   })
 
   deps.eventBus.subscribe({ eventType: 'artifact' }, (envelope) => {
-    handleArtifactStorageAndCoherence(envelope, deps)
+    handleArtifactStorageAndCoherence(envelope, deps, publishCoherenceIssue)
+    void runCoherencePipeline(deps.tickService.currentTick(), envelope.runId)
   })
 
   deps.eventBus.subscribe({ eventType: 'lifecycle' }, (envelope) => {
@@ -53,6 +122,10 @@ export function wireEventHandlers(deps: EventHandlerDeps): void {
 
   deps.eventBus.subscribe({ eventType: 'error' }, (envelope) => {
     handleErrorTrustTracking(envelope, deps)
+  })
+
+  deps.tickService.onTick((tick) => {
+    void runCoherencePipeline(tick, 'system')
   })
 }
 
@@ -88,13 +161,22 @@ export function handleDecisionAndAutoCheckpoint(envelope: EventEnvelope, deps: D
   })
 }
 
-export function handleArtifactStorageAndCoherence(envelope: EventEnvelope, deps: ArtifactDeps): void {
+export function handleArtifactStorageAndCoherence(
+  envelope: EventEnvelope,
+  deps: ArtifactDeps,
+  onCoherenceIssue?: (issue: import('./types/events').CoherenceEvent, runId: string) => void
+): void {
   if (envelope.event.type !== 'artifact') return
 
   deps.knowledgeStore.storeArtifact(envelope.event)
 
   const issue = deps.coherenceMonitor.processArtifact(envelope.event)
   if (!issue) return
+
+  if (onCoherenceIssue) {
+    onCoherenceIssue(issue, envelope.runId)
+    return
+  }
 
   deps.knowledgeStore.storeCoherenceIssue(issue)
 
@@ -146,8 +228,26 @@ export function handleCompletionTrustTracking(envelope: EventEnvelope, deps: Com
   if (!trustOutcome) return
 
   const previousScore = deps.trustEngine.getScore(agentId) ?? 50
-  deps.trustEngine.applyOutcome(agentId, trustOutcome, deps.tickService.currentTick())
+  const artifactKinds = new Set<import('./types/events').ArtifactKind>()
+  const workstreams = new Set<string>()
+  for (const artifactId of envelope.event.artifactsProduced) {
+    const artifact = deps.knowledgeStore.getArtifact(artifactId)
+    if (!artifact) continue
+    artifactKinds.add(artifact.kind)
+    workstreams.add(artifact.workstream)
+  }
+
+  deps.trustEngine.applyOutcome(
+    agentId,
+    trustOutcome,
+    deps.tickService.currentTick(),
+    {
+      artifactKinds: [...artifactKinds],
+      workstreams: [...workstreams],
+    }
+  )
   const newScore = deps.trustEngine.getScore(agentId) ?? 50
+  flushDomainOutcomes(agentId, deps)
 
   if (previousScore !== newScore) {
     deps.wsHub.broadcast({
@@ -166,8 +266,16 @@ export function handleErrorTrustTracking(envelope: EventEnvelope, deps: ErrorDep
 
   const agentId = envelope.event.agentId
   const previousScore = deps.trustEngine.getScore(agentId) ?? 50
-  deps.trustEngine.applyOutcome(agentId, 'error_event', deps.tickService.currentTick())
+  deps.trustEngine.applyOutcome(
+    agentId,
+    'error_event',
+    deps.tickService.currentTick(),
+    {
+      toolCategory: classifyToolCategory(envelope.event.context?.toolName),
+    }
+  )
   const newScore = deps.trustEngine.getScore(agentId) ?? 50
+  flushDomainOutcomes(agentId, deps)
 
   if (previousScore !== newScore) {
     deps.wsHub.broadcast({
@@ -192,4 +300,29 @@ function mapCompletionOutcomeToTrustOutcome(outcome: 'success' | 'partial' | 'ab
     return 'task_abandoned_or_max_turns'
   }
   return null
+}
+
+function flushDomainOutcomes(agentId: string, deps: Pick<EventHandlerDeps, 'trustEngine' | 'knowledgeStore'>): void {
+  const outcomes = deps.trustEngine.flushDomainLog(agentId)
+  for (const outcome of outcomes) {
+    deps.knowledgeStore.appendAuditLog(
+      'trust_domain_outcome',
+      agentId,
+      'record',
+      agentId,
+      outcome
+    )
+  }
+}
+
+function classifyToolCategory(toolName: string | undefined): string | undefined {
+  if (!toolName) return undefined
+  const normalized = toolName.toLowerCase()
+  if (normalized.includes('read') || normalized.includes('list') || normalized.includes('grep') || normalized.includes('search') || normalized.includes('cat')) {
+    return 'read'
+  }
+  if (normalized.includes('write') || normalized.includes('edit') || normalized.includes('patch') || normalized.includes('update')) {
+    return 'write'
+  }
+  return 'execute'
 }

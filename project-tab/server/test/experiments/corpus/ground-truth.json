@@ -1,0 +1,240 @@
+{
+  "issues": [
+    {
+      "id": 1,
+      "pairKey": "be-utils:fe-helpers",
+      "artifactIdA": "be-utils",
+      "artifactIdB": "fe-helpers",
+      "workstreamA": "ws-backend",
+      "workstreamB": "ws-frontend",
+      "category": "duplication",
+      "severity": "medium",
+      "difficulty": "easy",
+      "description": "~90% identical utility files with minor variable renames (generateId vs createUniqueId, deepClone vs cloneDeep)",
+      "expectedDetectionLayers": [
+        "layer1a"
+      ]
+    },
+    {
+      "id": 2,
+      "pairKey": "be-validation:inf-validate",
+      "artifactIdA": "be-validation",
+      "artifactIdB": "inf-validate",
+      "workstreamA": "ws-backend",
+      "workstreamB": "ws-infra",
+      "category": "duplication",
+      "severity": "medium",
+      "difficulty": "easy",
+      "description": "Same validation logic with minor naming differences (validateEmail vs checkEmail, ValidationResult vs CheckResult)",
+      "expectedDetectionLayers": [
+        "layer1a"
+      ]
+    },
+    {
+      "id": 3,
+      "pairKey": "be-env:inf-env",
+      "artifactIdA": "be-env",
+      "artifactIdB": "inf-env",
+      "workstreamA": "ws-backend",
+      "workstreamB": "ws-infra",
+      "category": "contradiction",
+      "severity": "high",
+      "difficulty": "easy",
+      "description": "Same env var keys with different values: DB_PORT 5432 vs 5433, DB_HOST localhost vs db.internal.cluster, CORS_ORIGIN mismatch",
+      "expectedDetectionLayers": [
+        "layer1a"
+      ]
+    },
+    {
+      "id": 4,
+      "pairKey": "be-auth-handler:fe-api-client",
+      "artifactIdA": "be-auth-handler",
+      "artifactIdB": "fe-api-client",
+      "workstreamA": "ws-backend",
+      "workstreamB": "ws-frontend",
+      "category": "duplication",
+      "severity": "low",
+      "difficulty": "medium",
+      "description": "Both contain parseJWT() (~50tok) buried in larger unrelated files. Embedding dilution lowers similarity.",
+      "expectedDetectionLayers": [
+        "layer1a",
+        "layer2"
+      ]
+    },
+    {
+      "id": 5,
+      "pairKey": "be-db-queries:inf-migration",
+      "artifactIdA": "be-db-queries",
+      "artifactIdB": "inf-migration",
+      "workstreamA": "ws-backend",
+      "workstreamB": "ws-infra",
+      "category": "duplication",
+      "severity": "low",
+      "difficulty": "medium",
+      "description": "Both contain normalizeTimestamp(). Asymmetric file sizes compound embedding dilution.",
+      "expectedDetectionLayers": [
+        "layer1a",
+        "layer2"
+      ]
+    },
+    {
+      "id": 6,
+      "pairKey": "doc-examples:fe-form-utils",
+      "artifactIdA": "fe-form-utils",
+      "artifactIdB": "doc-examples",
+      "workstreamA": "ws-frontend",
+      "workstreamB": "ws-docs",
+      "category": "duplication",
+      "severity": "low",
+      "difficulty": "medium",
+      "description": "Both contain validateEmail(). Cross-kind (code/document) pairing.",
+      "expectedDetectionLayers": [
+        "layer1a",
+        "layer2"
+      ]
+    },
+    {
+      "id": 7,
+      "pairKey": "doc-perf-guide:res-caching",
+      "artifactIdA": "res-caching",
+      "artifactIdB": "doc-perf-guide",
+      "workstreamA": "ws-research",
+      "workstreamB": "ws-docs",
+      "category": "duplication",
+      "severity": "warning",
+      "difficulty": "medium",
+      "description": "Thematic overlap: both discuss Redis caching strategies with similar recommendations.",
+      "expectedDetectionLayers": [
+        "layer1a",
+        "layer1c"
+      ]
+    },
+    {
+      "id": 8,
+      "pairKey": "doc-security:res-auth",
+      "artifactIdA": "res-auth",
+      "artifactIdB": "doc-security",
+      "workstreamA": "ws-research",
+      "workstreamB": "ws-docs",
+      "category": "duplication",
+      "severity": "warning",
+      "difficulty": "medium",
+      "description": "Both analyze OAuth vs JWT tradeoffs with similar conclusions.",
+      "expectedDetectionLayers": [
+        "layer1a",
+        "layer1c"
+      ]
+    },
+    {
+      "id": 9,
+      "pairKey": "be-adr-003:fe-adr-001",
+      "artifactIdA": "be-adr-003",
+      "artifactIdB": "fe-adr-001",
+      "workstreamA": "ws-backend",
+      "workstreamB": "ws-frontend",
+      "category": "contradiction",
+      "severity": "critical",
+      "difficulty": "hard",
+      "description": "Backend ADR chose REST with OpenAPI; Frontend ADR expects GraphQL with Apollo Client. Opposite API design conclusions.",
+      "expectedDetectionLayers": [
+        "layer1c",
+        "layer2"
+      ]
+    },
+    {
+      "id": 10,
+      "pairKey": "be-adr-004:inf-adr-002",
+      "artifactIdA": "inf-adr-002",
+      "artifactIdB": "be-adr-004",
+      "workstreamA": "ws-infra",
+      "workstreamB": "ws-backend",
+      "category": "contradiction",
+      "severity": "high",
+      "difficulty": "hard",
+      "description": "Infrastructure deploys PostgreSQL 15; Backend assumes PostgreSQL 16 features (pg_stat_io, COPY DEFAULT).",
+      "expectedDetectionLayers": [
+        "layer1c",
+        "layer2"
+      ]
+    },
+    {
+      "id": 11,
+      "pairKey": "be-tsconfig:fe-tsconfig",
+      "artifactIdA": "be-tsconfig",
+      "artifactIdB": "fe-tsconfig",
+      "workstreamA": "ws-backend",
+      "workstreamB": "ws-frontend",
+      "category": "contradiction",
+      "severity": "medium",
+      "difficulty": "hard",
+      "description": "Config drift: backend targets ES2022 with NodeNext module; frontend targets ES2020 with ESNext/bundler.",
+      "expectedDetectionLayers": [
+        "layer1c",
+        "layer2"
+      ]
+    },
+    {
+      "id": 12,
+      "pairKey": "be-eslint:fe-eslint",
+      "artifactIdA": "be-eslint",
+      "artifactIdB": "fe-eslint",
+      "workstreamA": "ws-backend",
+      "workstreamB": "ws-frontend",
+      "category": "contradiction",
+      "severity": "medium",
+      "difficulty": "hard",
+      "description": "Contradictory ESLint rules: backend enforces semicolons (\"always\"), frontend forbids them (\"never\").",
+      "expectedDetectionLayers": [
+        "layer1c",
+        "layer2"
+      ]
+    },
+    {
+      "id": 13,
+      "pairKey": "doc-capacity:res-scaling",
+      "artifactIdA": "res-scaling",
+      "artifactIdB": "doc-capacity",
+      "workstreamA": "ws-research",
+      "workstreamB": "ws-docs",
+      "category": "duplication",
+      "severity": "warning",
+      "difficulty": "hard",
+      "description": "Both independently conclude \"need 3x more cache (4GB→12GB)\" with different framing and analysis.",
+      "expectedDetectionLayers": [
+        "layer1c"
+      ]
+    },
+    {
+      "id": 14,
+      "pairKey": "be-api-spec:fe-api-types",
+      "artifactIdA": "be-api-spec",
+      "artifactIdB": "fe-api-types",
+      "workstreamA": "ws-backend",
+      "workstreamB": "ws-frontend",
+      "category": "contradiction",
+      "severity": "high",
+      "difficulty": "hard",
+      "description": "Same endpoints, different response shapes: camelCase (userId, projectId) vs snake_case (user_id, project_id).",
+      "expectedDetectionLayers": [
+        "layer1c",
+        "layer2"
+      ]
+    },
+    {
+      "id": 15,
+      "pairKey": "be-router:fe-package",
+      "artifactIdA": "fe-package",
+      "artifactIdB": "be-router",
+      "workstreamA": "ws-frontend",
+      "workstreamB": "ws-backend",
+      "category": "dependency_violation",
+      "severity": "high",
+      "difficulty": "hard",
+      "description": "Backend router imports @project/frontend/internal-state — backend depends on frontend internals.",
+      "expectedDetectionLayers": [
+        "layer1c",
+        "layer2"
+      ]
+    }
+  ]
+}

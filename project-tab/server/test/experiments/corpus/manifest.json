@@ -1,0 +1,518 @@
+{
+  "generatedAt": "2026-01-15T00:00:00.000Z",
+  "seed": 42,
+  "totalArtifacts": 50,
+  "totalIssues": 15,
+  "artifacts": [
+    {
+      "artifactId": "be-utils",
+      "workstream": "ws-backend",
+      "agentId": "agent-backend",
+      "filename": "ws-backend/utils.ts",
+      "kind": "code",
+      "estimatedTokens": 220,
+      "issueIds": [
+        1
+      ]
+    },
+    {
+      "artifactId": "be-validation",
+      "workstream": "ws-backend",
+      "agentId": "agent-backend",
+      "filename": "ws-backend/validation.ts",
+      "kind": "code",
+      "estimatedTokens": 276,
+      "issueIds": [
+        2
+      ]
+    },
+    {
+      "artifactId": "be-env",
+      "workstream": "ws-backend",
+      "agentId": "agent-backend",
+      "filename": "ws-backend/.env.example",
+      "kind": "config",
+      "estimatedTokens": 75,
+      "issueIds": [
+        3
+      ]
+    },
+    {
+      "artifactId": "be-auth-handler",
+      "workstream": "ws-backend",
+      "agentId": "agent-backend",
+      "filename": "ws-backend/auth-handler.ts",
+      "kind": "code",
+      "estimatedTokens": 506,
+      "issueIds": [
+        4
+      ]
+    },
+    {
+      "artifactId": "be-db-queries",
+      "workstream": "ws-backend",
+      "agentId": "agent-backend",
+      "filename": "ws-backend/db-queries.ts",
+      "kind": "code",
+      "estimatedTokens": 623,
+      "issueIds": [
+        5
+      ]
+    },
+    {
+      "artifactId": "be-adr-003",
+      "workstream": "ws-backend",
+      "agentId": "agent-backend",
+      "filename": "ws-backend/adr-003-api-design.md",
+      "kind": "document",
+      "estimatedTokens": 266,
+      "issueIds": [
+        9
+      ]
+    },
+    {
+      "artifactId": "be-adr-004",
+      "workstream": "ws-backend",
+      "agentId": "agent-backend",
+      "filename": "ws-backend/adr-004-database.md",
+      "kind": "document",
+      "estimatedTokens": 209,
+      "issueIds": [
+        10
+      ]
+    },
+    {
+      "artifactId": "be-tsconfig",
+      "workstream": "ws-backend",
+      "agentId": "agent-backend",
+      "filename": "ws-backend/tsconfig.json",
+      "kind": "config",
+      "estimatedTokens": 157,
+      "issueIds": [
+        11
+      ]
+    },
+    {
+      "artifactId": "be-eslint",
+      "workstream": "ws-backend",
+      "agentId": "agent-backend",
+      "filename": "ws-backend/.eslintrc.json",
+      "kind": "config",
+      "estimatedTokens": 194,
+      "issueIds": [
+        12
+      ]
+    },
+    {
+      "artifactId": "be-api-spec",
+      "workstream": "ws-backend",
+      "agentId": "agent-backend",
+      "filename": "ws-backend/api-spec.ts",
+      "kind": "code",
+      "estimatedTokens": 223,
+      "issueIds": [
+        14
+      ]
+    },
+    {
+      "artifactId": "be-router",
+      "workstream": "ws-backend",
+      "agentId": "agent-backend",
+      "filename": "ws-backend/router.ts",
+      "kind": "code",
+      "estimatedTokens": 299,
+      "issueIds": [
+        15
+      ]
+    },
+    {
+      "artifactId": "fe-helpers",
+      "workstream": "ws-frontend",
+      "agentId": "agent-frontend",
+      "filename": "ws-frontend/helpers.ts",
+      "kind": "code",
+      "estimatedTokens": 221,
+      "issueIds": [
+        1
+      ]
+    },
+    {
+      "artifactId": "fe-api-client",
+      "workstream": "ws-frontend",
+      "agentId": "agent-frontend",
+      "filename": "ws-frontend/api-client.ts",
+      "kind": "code",
+      "estimatedTokens": 418,
+      "issueIds": [
+        4
+      ]
+    },
+    {
+      "artifactId": "fe-form-utils",
+      "workstream": "ws-frontend",
+      "agentId": "agent-frontend",
+      "filename": "ws-frontend/form-utils.ts",
+      "kind": "code",
+      "estimatedTokens": 424,
+      "issueIds": [
+        6
+      ]
+    },
+    {
+      "artifactId": "fe-adr-001",
+      "workstream": "ws-frontend",
+      "agentId": "agent-frontend",
+      "filename": "ws-frontend/adr-001-data-fetching.md",
+      "kind": "document",
+      "estimatedTokens": 255,
+      "issueIds": [
+        9
+      ]
+    },
+    {
+      "artifactId": "fe-tsconfig",
+      "workstream": "ws-frontend",
+      "agentId": "agent-frontend",
+      "filename": "ws-frontend/tsconfig.json",
+      "kind": "config",
+      "estimatedTokens": 123,
+      "issueIds": [
+        11
+      ]
+    },
+    {
+      "artifactId": "fe-eslint",
+      "workstream": "ws-frontend",
+      "agentId": "agent-frontend",
+      "filename": "ws-frontend/.eslintrc.json",
+      "kind": "config",
+      "estimatedTokens": 238,
+      "issueIds": [
+        12
+      ]
+    },
+    {
+      "artifactId": "fe-api-types",
+      "workstream": "ws-frontend",
+      "agentId": "agent-frontend",
+      "filename": "ws-frontend/api-types.ts",
+      "kind": "code",
+      "estimatedTokens": 222,
+      "issueIds": [
+        14
+      ]
+    },
+    {
+      "artifactId": "fe-package",
+      "workstream": "ws-frontend",
+      "agentId": "agent-frontend",
+      "filename": "ws-frontend/package.json",
+      "kind": "config",
+      "estimatedTokens": 128,
+      "issueIds": [
+        15
+      ]
+    },
+    {
+      "artifactId": "fe-components",
+      "workstream": "ws-frontend",
+      "agentId": "agent-frontend",
+      "filename": "ws-frontend/components.tsx",
+      "kind": "code",
+      "estimatedTokens": 288,
+      "issueIds": []
+    },
+    {
+      "artifactId": "inf-validate",
+      "workstream": "ws-infra",
+      "agentId": "agent-infra",
+      "filename": "ws-infra/validate.ts",
+      "kind": "code",
+      "estimatedTokens": 276,
+      "issueIds": [
+        2
+      ]
+    },
+    {
+      "artifactId": "inf-env",
+      "workstream": "ws-infra",
+      "agentId": "agent-infra",
+      "filename": "ws-infra/.env.example",
+      "kind": "config",
+      "estimatedTokens": 95,
+      "issueIds": [
+        3
+      ]
+    },
+    {
+      "artifactId": "inf-migration",
+      "workstream": "ws-infra",
+      "agentId": "agent-infra",
+      "filename": "ws-infra/migration.ts",
+      "kind": "code",
+      "estimatedTokens": 352,
+      "issueIds": [
+        5
+      ]
+    },
+    {
+      "artifactId": "inf-adr-002",
+      "workstream": "ws-infra",
+      "agentId": "agent-infra",
+      "filename": "ws-infra/adr-002-database-infra.md",
+      "kind": "document",
+      "estimatedTokens": 263,
+      "issueIds": [
+        10
+      ]
+    },
+    {
+      "artifactId": "inf-dockerfile",
+      "workstream": "ws-infra",
+      "agentId": "agent-infra",
+      "filename": "ws-infra/Dockerfile",
+      "kind": "config",
+      "estimatedTokens": 126,
+      "issueIds": []
+    },
+    {
+      "artifactId": "inf-ci-pipeline",
+      "workstream": "ws-infra",
+      "agentId": "agent-infra",
+      "filename": "ws-infra/ci-pipeline.yml",
+      "kind": "config",
+      "estimatedTokens": 243,
+      "issueIds": []
+    },
+    {
+      "artifactId": "inf-terraform",
+      "workstream": "ws-infra",
+      "agentId": "agent-infra",
+      "filename": "ws-infra/main.tf",
+      "kind": "config",
+      "estimatedTokens": 260,
+      "issueIds": []
+    },
+    {
+      "artifactId": "doc-examples",
+      "workstream": "ws-docs",
+      "agentId": "agent-docs",
+      "filename": "ws-docs/code-examples.md",
+      "kind": "document",
+      "estimatedTokens": 178,
+      "issueIds": [
+        6
+      ]
+    },
+    {
+      "artifactId": "doc-perf-guide",
+      "workstream": "ws-docs",
+      "agentId": "agent-docs",
+      "filename": "ws-docs/performance-guide.md",
+      "kind": "document",
+      "estimatedTokens": 258,
+      "issueIds": [
+        7
+      ]
+    },
+    {
+      "artifactId": "doc-security",
+      "workstream": "ws-docs",
+      "agentId": "agent-docs",
+      "filename": "ws-docs/security-guide.md",
+      "kind": "document",
+      "estimatedTokens": 273,
+      "issueIds": [
+        8
+      ]
+    },
+    {
+      "artifactId": "doc-capacity",
+      "workstream": "ws-docs",
+      "agentId": "agent-docs",
+      "filename": "ws-docs/capacity-planning.md",
+      "kind": "document",
+      "estimatedTokens": 253,
+      "issueIds": [
+        13
+      ]
+    },
+    {
+      "artifactId": "doc-getting-started",
+      "workstream": "ws-docs",
+      "agentId": "agent-docs",
+      "filename": "ws-docs/getting-started.md",
+      "kind": "document",
+      "estimatedTokens": 155,
+      "issueIds": []
+    },
+    {
+      "artifactId": "doc-api-reference",
+      "workstream": "ws-docs",
+      "agentId": "agent-docs",
+      "filename": "ws-docs/api-reference.md",
+      "kind": "document",
+      "estimatedTokens": 217,
+      "issueIds": []
+    },
+    {
+      "artifactId": "doc-deployment",
+      "workstream": "ws-docs",
+      "agentId": "agent-docs",
+      "filename": "ws-docs/deployment.md",
+      "kind": "document",
+      "estimatedTokens": 234,
+      "issueIds": []
+    },
+    {
+      "artifactId": "doc-contributing",
+      "workstream": "ws-docs",
+      "agentId": "agent-docs",
+      "filename": "ws-docs/contributing.md",
+      "kind": "document",
+      "estimatedTokens": 206,
+      "issueIds": []
+    },
+    {
+      "artifactId": "doc-troubleshooting",
+      "workstream": "ws-docs",
+      "agentId": "agent-docs",
+      "filename": "ws-docs/troubleshooting.md",
+      "kind": "document",
+      "estimatedTokens": 240,
+      "issueIds": []
+    },
+    {
+      "artifactId": "res-caching",
+      "workstream": "ws-research",
+      "agentId": "agent-research",
+      "filename": "ws-research/caching-analysis.md",
+      "kind": "document",
+      "estimatedTokens": 361,
+      "issueIds": [
+        7
+      ]
+    },
+    {
+      "artifactId": "res-auth",
+      "workstream": "ws-research",
+      "agentId": "agent-research",
+      "filename": "ws-research/auth-evaluation.md",
+      "kind": "document",
+      "estimatedTokens": 337,
+      "issueIds": [
+        8
+      ]
+    },
+    {
+      "artifactId": "res-scaling",
+      "workstream": "ws-research",
+      "agentId": "agent-research",
+      "filename": "ws-research/scaling-analysis.md",
+      "kind": "document",
+      "estimatedTokens": 328,
+      "issueIds": [
+        13
+      ]
+    },
+    {
+      "artifactId": "res-frameworks",
+      "workstream": "ws-research",
+      "agentId": "agent-research",
+      "filename": "ws-research/framework-comparison.md",
+      "kind": "document",
+      "estimatedTokens": 258,
+      "issueIds": []
+    },
+    {
+      "artifactId": "res-testing",
+      "workstream": "ws-research",
+      "agentId": "agent-research",
+      "filename": "ws-research/testing-strategy.md",
+      "kind": "document",
+      "estimatedTokens": 230,
+      "issueIds": []
+    },
+    {
+      "artifactId": "res-monitoring",
+      "workstream": "ws-research",
+      "agentId": "agent-research",
+      "filename": "ws-research/monitoring-research.md",
+      "kind": "document",
+      "estimatedTokens": 297,
+      "issueIds": []
+    },
+    {
+      "artifactId": "res-database",
+      "workstream": "ws-research",
+      "agentId": "agent-research",
+      "filename": "ws-research/database-research.md",
+      "kind": "document",
+      "estimatedTokens": 283,
+      "issueIds": []
+    },
+    {
+      "artifactId": "res-accessibility",
+      "workstream": "ws-research",
+      "agentId": "agent-research",
+      "filename": "ws-research/accessibility-audit.md",
+      "kind": "document",
+      "estimatedTokens": 299,
+      "issueIds": []
+    },
+    {
+      "artifactId": "res-ci-comparison",
+      "workstream": "ws-research",
+      "agentId": "agent-research",
+      "filename": "ws-research/ci-comparison.md",
+      "kind": "document",
+      "estimatedTokens": 214,
+      "issueIds": []
+    },
+    {
+      "artifactId": "be-logger",
+      "workstream": "ws-backend",
+      "agentId": "agent-backend",
+      "filename": "ws-backend/logger.ts",
+      "kind": "code",
+      "estimatedTokens": 414,
+      "issueIds": []
+    },
+    {
+      "artifactId": "fe-theme",
+      "workstream": "ws-frontend",
+      "agentId": "agent-frontend",
+      "filename": "ws-frontend/theme.ts",
+      "kind": "code",
+      "estimatedTokens": 243,
+      "issueIds": []
+    },
+    {
+      "artifactId": "inf-docker-compose",
+      "workstream": "ws-infra",
+      "agentId": "agent-infra",
+      "filename": "ws-infra/docker-compose.yml",
+      "kind": "config",
+      "estimatedTokens": 253,
+      "issueIds": []
+    },
+    {
+      "artifactId": "doc-architecture",
+      "workstream": "ws-docs",
+      "agentId": "agent-docs",
+      "filename": "ws-docs/architecture.md",
+      "kind": "document",
+      "estimatedTokens": 261,
+      "issueIds": []
+    },
+    {
+      "artifactId": "res-error-handling",
+      "workstream": "ws-research",
+      "agentId": "agent-research",
+      "filename": "ws-research/error-handling-patterns.md",
+      "kind": "document",
+      "estimatedTokens": 363,
+      "issueIds": []
+    }
+  ]
+}

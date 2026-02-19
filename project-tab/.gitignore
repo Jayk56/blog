@@ -13,6 +13,10 @@ dist-ssr
 *.local
 .claude-agents/
 
+# Experiment results (keep .gitkeep)
+server/test/experiments/results/
+!server/test/experiments/results/.gitkeep
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -396,6 +396,43 @@ describe('TrustEngine', () => {
     })
   })
 
+  describe('domain outcome logging', () => {
+    it('applies the same score delta when context is provided', () => {
+      const engine = new TrustEngine()
+      engine.registerAgent('a')
+
+      const delta = engine.applyOutcome('a', 'human_approves_tool_call', 10, {
+        artifactKinds: ['code'],
+        workstreams: ['ws-backend'],
+        toolCategory: 'write',
+      })
+
+      expect(delta).toBe(1)
+      expect(engine.getScore('a')).toBe(51)
+    })
+
+    it('records and flushes domain outcomes', () => {
+      const engine = new TrustEngine()
+      engine.registerAgent('a')
+
+      engine.applyOutcome('a', 'task_completed_clean', 42, {
+        artifactKinds: ['code', 'config'],
+        workstreams: ['ws-a'],
+      })
+
+      const flushed = engine.flushDomainLog('a')
+      expect(flushed).toHaveLength(1)
+      expect(flushed[0]).toMatchObject({
+        agentId: 'a',
+        outcome: 'task_completed_clean',
+        tick: 42,
+      })
+      expect(flushed[0].artifactKinds).toContain('code')
+      expect(flushed[0].workstreams).toContain('ws-a')
+      expect(engine.flushDomainLog('a')).toEqual([])
+    })
+  })
+
   describe('edge cases', () => {
     it('returns 0 delta for unregistered agent', () => {
       const engine = new TrustEngine()

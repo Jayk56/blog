@@ -4,6 +4,7 @@ import { EventBus } from '../../src/bus'
 import { TickService } from '../../src/tick'
 import { TrustEngine } from '../../src/intelligence/trust-engine'
 import { DecisionQueue } from '../../src/intelligence/decision-queue'
+import { KnowledgeStore as KnowledgeStoreImpl } from '../../src/intelligence/knowledge-store'
 import { WebSocketHub } from '../../src/ws-hub'
 import type { ApiRouteDeps, AgentRegistry, AgentGateway, KnowledgeStore, CheckpointStore, ControlModeManager } from '../../src/routes'
 import type { AgentHandle, AgentPlugin, FrontendMessage, KnowledgeSnapshot, PluginCapabilities } from '../../src/types'
@@ -770,6 +771,73 @@ describe('Route wiring: POST /api/decisions/:id/resolve', () => {
       expect(score).toBe(48) // 50 - 2
     } finally {
       await app.close()
+    }
+  })
+
+  it('records decision resolution trust context in audit log when knowledgeStoreImpl is available', async () => {
+    const { deps, registry } = createTestDeps()
+    const store = new KnowledgeStoreImpl(':memory:')
+    deps.knowledgeStoreImpl = store
+
+    const app = createTestApp(deps)
+    await app.start()
+
+    registry.registerHandle({
+      id: 'agent-audit-1',
+      pluginName: 'mock',
+      status: 'running',
+      sessionId: 'session-1',
+    })
+    deps.trustEngine.registerAgent('agent-audit-1')
+
+    store.storeArtifact({
+      type: 'artifact',
+      agentId: 'agent-audit-1',
+      artifactId: 'art-audit-1',
+      name: 'auth.ts',
+      kind: 'code',
+      workstream: 'ws-backend',
+      status: 'draft',
+      qualityScore: 0.8,
+      provenance: { createdBy: 'agent-audit-1', createdAt: new Date().toISOString() },
+    })
+
+    deps.decisionQueue.enqueue({
+      type: 'decision',
+      subtype: 'option',
+      agentId: 'agent-audit-1',
+      decisionId: 'dec-audit-1',
+      title: 'Choose architecture',
+      summary: 'Select implementation path',
+      severity: 'high',
+      confidence: 0.7,
+      blastRadius: 'medium',
+      options: [{ id: 'o1', label: 'A', description: 'Option A' }],
+      recommendedOptionId: 'o1',
+      affectedArtifactIds: ['art-audit-1'],
+      requiresRationale: false,
+    }, 0)
+
+    try {
+      const res = await httpPost(app.baseUrl, '/api/decisions/dec-audit-1/resolve', {
+        resolution: {
+          type: 'option',
+          chosenOptionId: 'o1',
+          rationale: 'Preferred',
+          actionKind: 'update',
+        },
+      })
+
+      expect(res.status).toBe(200)
+
+      const records = store.listAuditLog('trust_outcome', 'dec-audit-1')
+      expect(records).toHaveLength(1)
+      const details = records[0]!.details as { affectedWorkstreams: string[]; affectedArtifactKinds: string[] }
+      expect(details.affectedWorkstreams).toContain('ws-backend')
+      expect(details.affectedArtifactKinds).toContain('code')
+    } finally {
+      await app.close()
+      store.close()
     }
   })
 })

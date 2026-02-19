@@ -7,6 +7,7 @@ import {
   cosineSimilarity
 } from '../../src/intelligence/embedding-service'
 import { MockCoherenceReviewService } from '../../src/intelligence/coherence-review-service'
+import type { LlmSweepIssue, LlmSweepRequest, LlmSweepService } from '../../src/intelligence/coherence-review-service'
 import { TickService } from '../../src/tick'
 import type { ArtifactEvent } from '../../src/types/events'
 
@@ -26,6 +27,24 @@ function makeArtifact(overrides: Partial<ArtifactEvent> = {}): ArtifactEvent {
       sourcePath: '/src/main.ts'
     },
     ...overrides
+  }
+}
+
+class MockSweepService implements LlmSweepService {
+  public callCount = 0
+  public lastRequest: LlmSweepRequest | null = null
+  constructor(private readonly issues: LlmSweepIssue[] = []) {}
+
+  async sweepCorpus(request: LlmSweepRequest): Promise<LlmSweepIssue[]> {
+    this.callCount += 1
+    this.lastRequest = request
+    return this.issues
+  }
+}
+
+class ThrowingSweepService implements LlmSweepService {
+  async sweepCorpus(_request: LlmSweepRequest): Promise<LlmSweepIssue[]> {
+    throw new Error('transient provider error')
   }
 }
 
@@ -400,6 +419,99 @@ describe('CoherenceMonitor — Layer 1 scan', () => {
 
     expect(result).toEqual([])
   })
+
+  it('detects cross-workstream contentHash collisions and promotes to Layer 2', async () => {
+    const artA = makeArtifact({
+      artifactId: 'art-a',
+      agentId: 'agent-a',
+      kind: 'design',
+      workstream: 'ws-backend',
+      contentHash: 'sha256:same',
+      provenance: { createdBy: 'agent-a', createdAt: new Date().toISOString() }
+    })
+    const artB = makeArtifact({
+      artifactId: 'art-b',
+      agentId: 'agent-b',
+      kind: 'design',
+      workstream: 'ws-frontend',
+      contentHash: 'sha256:same',
+      provenance: { createdBy: 'agent-b', createdAt: new Date().toISOString() }
+    })
+    artifacts.set('art-a', artA)
+    artifacts.set('art-b', artB)
+    monitor.processArtifact(artA)
+    monitor.processArtifact(artB)
+
+    const candidates = await monitor.runLayer1Scan(
+      1,
+      (id) => artifacts.get(id),
+      () => undefined
+    )
+
+    expect(candidates).toHaveLength(1)
+    expect(candidates[0].similarityScore).toBe(1)
+    expect(candidates[0].promotedToLayer2).toBe(true)
+  })
+
+  it('ignores contentHash collisions within the same workstream', async () => {
+    const artA = makeArtifact({
+      artifactId: 'art-a',
+      kind: 'design',
+      workstream: 'ws-backend',
+      contentHash: 'sha256:same',
+      provenance: { createdBy: 'agent-1', createdAt: new Date().toISOString() }
+    })
+    const artB = makeArtifact({
+      artifactId: 'art-b',
+      kind: 'design',
+      workstream: 'ws-backend',
+      contentHash: 'sha256:same',
+      provenance: { createdBy: 'agent-2', createdAt: new Date().toISOString() }
+    })
+    artifacts.set('art-a', artA)
+    artifacts.set('art-b', artB)
+    monitor.processArtifact(artA)
+    monitor.processArtifact(artB)
+
+    const candidates = await monitor.runLayer1Scan(
+      1,
+      (id) => artifacts.get(id),
+      () => undefined
+    )
+
+    expect(candidates).toHaveLength(0)
+  })
+
+  it('ignores contentHash collisions from the same agent', async () => {
+    const artA = makeArtifact({
+      artifactId: 'art-a',
+      kind: 'design',
+      agentId: 'agent-same',
+      workstream: 'ws-a',
+      contentHash: 'sha256:same',
+      provenance: { createdBy: 'agent-same', createdAt: new Date().toISOString() }
+    })
+    const artB = makeArtifact({
+      artifactId: 'art-b',
+      kind: 'design',
+      agentId: 'agent-same',
+      workstream: 'ws-b',
+      contentHash: 'sha256:same',
+      provenance: { createdBy: 'agent-same', createdAt: new Date().toISOString() }
+    })
+    artifacts.set('art-a', artA)
+    artifacts.set('art-b', artB)
+    monitor.processArtifact(artA)
+    monitor.processArtifact(artB)
+
+    const candidates = await monitor.runLayer1Scan(
+      1,
+      (id) => artifacts.get(id),
+      () => undefined
+    )
+
+    expect(candidates).toHaveLength(0)
+  })
 })
 
 describe('CoherenceMonitor — TickService integration', () => {
@@ -628,6 +740,16 @@ describe('CoherenceMonitor — Layer 2 review', () => {
     expect(req.artifactContents.size).toBeGreaterThan(0)
   })
 
+  it('uses configured artifact content provider when no provider argument is passed', async () => {
+    await createPromotedCandidate()
+    monitor.setArtifactContentProvider((id) => contents.get(id))
+
+    await monitor.runLayer2Review()
+
+    expect(reviewService.lastRequest).not.toBeNull()
+    expect(reviewService.lastRequest!.artifactContents.size).toBeGreaterThan(0)
+  })
+
   it('stores review results', async () => {
     await createPromotedCandidate()
 
@@ -733,5 +855,150 @@ describe('CoherenceMonitor — end-to-end Layer 0 + 1 + 2 flow', () => {
     expect(confirmed!.description).toContain('Both agents are implementing authentication independently')
     expect(confirmed!.affectedArtifactIds).toContain('auth-module')
     expect(confirmed!.affectedArtifactIds).toContain('auth-service')
+  })
+})
+
+describe('CoherenceMonitor — Layer 1c sweep', () => {
+  it('runs when dirty and interval elapsed, then clears dirty flag', async () => {
+    const monitor = new CoherenceMonitor({
+      enableLayer1c: true,
+      layer1cScanIntervalTicks: 10,
+      layer1cMaxCorpusTokens: 1000,
+    })
+    const sweepService = new MockSweepService([
+      {
+        artifactIdA: 'art-a',
+        artifactIdB: 'art-b',
+        category: 'duplication',
+        severity: 'high',
+        explanation: 'LLM detected duplicated function',
+        notifyAgentIds: [],
+      },
+    ])
+    monitor.setSweepService(sweepService)
+
+    const artA = makeArtifact({
+      artifactId: 'art-a',
+      workstream: 'ws-a',
+      provenance: { createdBy: 'agent-1', createdAt: new Date().toISOString() }
+    })
+    const artB = makeArtifact({
+      artifactId: 'art-b',
+      workstream: 'ws-b',
+      provenance: { createdBy: 'agent-2', createdAt: new Date().toISOString() }
+    })
+    monitor.processArtifact(artA)
+    monitor.processArtifact(artB)
+
+    expect(monitor.shouldRunLayer1cSweep(10)).toBe(true)
+    const emitted = await monitor.runLayer1cSweep(
+      10,
+      () => [artA, artB],
+      (id) => (id === 'art-a' ? 'same function' : 'same function')
+    )
+
+    expect(sweepService.callCount).toBe(1)
+    expect(emitted).toHaveLength(1)
+    expect(monitor.isLayer1cDirty()).toBe(false)
+    expect(monitor.getLastLayer1cSweepTick()).toBe(10)
+  })
+
+  it('skips when corpus exceeds token limit', async () => {
+    const monitor = new CoherenceMonitor({
+      enableLayer1c: true,
+      layer1cScanIntervalTicks: 1,
+      layer1cMaxCorpusTokens: 1,
+    })
+    const sweepService = new MockSweepService()
+    monitor.setSweepService(sweepService)
+
+    const artifact = makeArtifact({
+      artifactId: 'art-a',
+      workstream: 'ws-a',
+      provenance: { createdBy: 'agent-1', createdAt: new Date().toISOString() }
+    })
+    monitor.processArtifact(artifact)
+
+    const emitted = await monitor.runLayer1cSweep(
+      1,
+      () => [artifact],
+      () => 'this text is too long for the token budget'
+    )
+
+    expect(emitted).toEqual([])
+    expect(sweepService.callCount).toBe(0)
+    expect(monitor.isLayer1cDirty()).toBe(false)
+  })
+
+  it('deduplicates issues already detected for the same artifact pair', async () => {
+    const monitor = new CoherenceMonitor({
+      enableLayer1c: true,
+      layer1cScanIntervalTicks: 1,
+    })
+    const sweepService = new MockSweepService([
+      {
+        artifactIdA: 'art-a',
+        artifactIdB: 'art-b',
+        category: 'duplication',
+        severity: 'medium',
+        explanation: 'Duplicate pair',
+        notifyAgentIds: [],
+      },
+    ])
+    monitor.setSweepService(sweepService)
+
+    const artA = makeArtifact({
+      artifactId: 'art-a',
+      workstream: 'ws-a',
+      provenance: { createdBy: 'agent-1', createdAt: new Date().toISOString(), sourcePath: '/same.ts' }
+    })
+    const artB = makeArtifact({
+      artifactId: 'art-b',
+      agentId: 'agent-2',
+      workstream: 'ws-b',
+      provenance: { createdBy: 'agent-2', createdAt: new Date().toISOString(), sourcePath: '/same.ts' }
+    })
+    monitor.processArtifact(artA)
+    monitor.processArtifact(artB) // emits a Layer 0 issue for this pair
+
+    const emitted = await monitor.runLayer1cSweep(
+      1,
+      () => [artA, artB],
+      () => 'duplicate content'
+    )
+
+    expect(emitted).toHaveLength(0)
+  })
+
+  it('keeps Layer 1c dirty when sweep fails so it can retry', async () => {
+    const monitor = new CoherenceMonitor({
+      enableLayer1c: true,
+      layer1cScanIntervalTicks: 1,
+    })
+    monitor.setSweepService(new ThrowingSweepService())
+
+    const artA = makeArtifact({
+      artifactId: 'art-a',
+      workstream: 'ws-a',
+      provenance: { createdBy: 'agent-1', createdAt: new Date().toISOString() }
+    })
+    const artB = makeArtifact({
+      artifactId: 'art-b',
+      workstream: 'ws-b',
+      provenance: { createdBy: 'agent-2', createdAt: new Date().toISOString() }
+    })
+    monitor.processArtifact(artA)
+    monitor.processArtifact(artB)
+
+    await expect(
+      monitor.runLayer1cSweep(
+        1,
+        () => [artA, artB],
+        () => 'content'
+      )
+    ).rejects.toThrow('transient provider error')
+
+    expect(monitor.isLayer1cDirty()).toBe(true)
+    expect(monitor.getLastLayer1cSweepTick()).toBe(0)
   })
 })

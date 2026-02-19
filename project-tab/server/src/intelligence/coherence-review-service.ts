@@ -49,6 +49,36 @@ export interface CoherenceReviewService {
   review(request: CoherenceReviewRequest): Promise<CoherenceReviewResult[]>
 }
 
+/** Artifact input for full-corpus Layer 1c sweeps. */
+export interface LlmSweepArtifact {
+  artifactId: string
+  workstream: string
+  content: string
+}
+
+/** Request payload for a Layer 1c full-corpus sweep. */
+export interface LlmSweepRequest {
+  artifacts: LlmSweepArtifact[]
+  prompt?: string
+  model?: string
+}
+
+/** Result payload for a Layer 1c sweep issue. */
+export interface LlmSweepIssue {
+  artifactIdA: string
+  artifactIdB: string
+  category: CoherenceCategory
+  severity: Severity
+  explanation: string
+  suggestedResolution?: string
+  notifyAgentIds: string[]
+}
+
+/** Service interface for Layer 1c full-corpus sweeps. */
+export interface LlmSweepService {
+  sweepCorpus(request: LlmSweepRequest): Promise<LlmSweepIssue[]>
+}
+
 /**
  * Rate limiter for Layer 2 reviews.
  * Tracks review invocations and enforces a maximum reviews-per-hour cap.

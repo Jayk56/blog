@@ -35,6 +35,7 @@ export interface KnowledgeStore {
   getSnapshot(pendingDecisions?: DecisionEvent[]): Promise<KnowledgeSnapshot>
   appendEvent(envelope: EventEnvelope): Promise<void>
   storeArtifactContent?(agentId: string, artifactId: string, content: string, mimeType?: string): ArtifactUploadResult
+  appendAuditLog?(entityType: string, entityId: string, action: string, callerAgentId?: string, details?: unknown): void
   storeProjectConfig?(config: import('./project-config').ProjectConfig): void
   getProjectConfig?(): import('./project-config').ProjectConfig | undefined
   hasProject?(): boolean

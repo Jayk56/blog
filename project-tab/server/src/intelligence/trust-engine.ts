@@ -1,5 +1,6 @@
 import type { TickService } from '../tick'
 import type { DecisionEvent, Resolution } from '../types'
+import type { ArtifactKind } from '../types/events'
 
 /**
  * Type-safe keys for the trust delta table. Each key corresponds to
@@ -77,6 +78,25 @@ export interface CalibrationLogEntry {
   timestamp: string
 }
 
+/** Optional context attached to trust outcomes for future domain-specific analysis. */
+export interface TrustOutcomeContext {
+  artifactKinds?: ArtifactKind[]
+  workstreams?: string[]
+  toolCategory?: string
+}
+
+/** Domain-tagged trust outcome record for deferred analysis. */
+export interface DomainOutcomeRecord {
+  agentId: string
+  outcome: TrustOutcome
+  effectiveDelta: number
+  tick: number
+  artifactKinds: ArtifactKind[]
+  workstreams: string[]
+  toolCategory?: string
+  timestamp: string
+}
+
 /** Maps a resolution + decision event to a TrustOutcome for the trust engine. */
 export function mapResolutionToTrustOutcome(
   resolution: Resolution,
@@ -119,6 +139,7 @@ export class TrustEngine {
   private readonly config: TrustCalibrationConfig
   private readonly agents = new Map<string, AgentTrustState>()
   private readonly calibrationLog: CalibrationLogEntry[] = []
+  private readonly domainOutcomeLogs = new Map<string, DomainOutcomeRecord[]>()
   private tickHandler: ((tick: number) => void) | null = null
 
   constructor(config: Partial<TrustCalibrationConfig> = {}) {
@@ -172,6 +193,7 @@ export class TrustEngine {
   /** Remove an agent from tracking (e.g., after kill). */
   removeAgent(agentId: string): void {
     this.agents.delete(agentId)
+    this.domainOutcomeLogs.delete(agentId)
   }
 
   /**
@@ -179,7 +201,12 @@ export class TrustEngine {
    * Returns the effective delta applied (after diminishing returns).
    * In calibration mode, logs but does not mutate.
    */
-  applyOutcome(agentId: string, outcome: TrustOutcome, currentTick = 0): number {
+  applyOutcome(
+    agentId: string,
+    outcome: TrustOutcome,
+    currentTick = 0,
+    context?: TrustOutcomeContext
+  ): number {
     const state = this.agents.get(agentId)
     if (!state) {
       return 0
@@ -199,6 +226,7 @@ export class TrustEngine {
         currentScore: state.score,
         timestamp: new Date().toISOString()
       })
+      this.recordDomainOutcome(agentId, outcome, effectiveDelta, currentTick, context)
       return effectiveDelta
     }
 
@@ -206,8 +234,16 @@ export class TrustEngine {
     state.score = this.clamp(state.score + effectiveDelta)
     state.lastActivityTick = currentTick
     state.decayAccumulator = 0
+    this.recordDomainOutcome(agentId, outcome, state.score - previousScore, currentTick, context)
 
     return state.score - previousScore
+  }
+
+  /** Returns and clears buffered domain outcomes for an agent. */
+  flushDomainLog(agentId: string): DomainOutcomeRecord[] {
+    const records = this.domainOutcomeLogs.get(agentId) ?? []
+    this.domainOutcomeLogs.delete(agentId)
+    return records
   }
 
   /** Returns the calibration log entries (only populated when calibrationMode is true). */
@@ -273,5 +309,29 @@ export class TrustEngine {
         }
       }
     }
+  }
+
+  private recordDomainOutcome(
+    agentId: string,
+    outcome: TrustOutcome,
+    effectiveDelta: number,
+    tick: number,
+    context?: TrustOutcomeContext
+  ): void {
+    if (!context) return
+    if (!context.artifactKinds?.length && !context.workstreams?.length && !context.toolCategory) return
+
+    const list = this.domainOutcomeLogs.get(agentId) ?? []
+    list.push({
+      agentId,
+      outcome,
+      effectiveDelta,
+      tick,
+      artifactKinds: [...(context.artifactKinds ?? [])],
+      workstreams: [...(context.workstreams ?? [])],
+      toolCategory: context.toolCategory,
+      timestamp: new Date().toISOString(),
+    })
+    this.domainOutcomeLogs.set(agentId, list)
   }
 }

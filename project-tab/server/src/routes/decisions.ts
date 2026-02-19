@@ -7,7 +7,7 @@ import { mapResolutionToTrustOutcome } from '../intelligence/trust-engine'
 
 type DecisionsDeps = Pick<
   ApiRouteDeps,
-  'decisionQueue' | 'trustEngine' | 'tickService' | 'wsHub' | 'registry' | 'gateway'
+  'decisionQueue' | 'trustEngine' | 'tickService' | 'wsHub' | 'registry' | 'gateway' | 'knowledgeStoreImpl'
 >
 
 /**
@@ -42,14 +42,68 @@ export function createDecisionsRouter(deps: DecisionsDeps): Router {
 
     const agentId = resolved.event.agentId
     const handle = deps.registry.getHandle(agentId)
+    const currentTick = deps.tickService.currentTick()
+
+    const affectedArtifactIds = resolved.event.subtype === 'option'
+      ? resolved.event.affectedArtifactIds
+      : (resolved.event.affectedArtifactIds ?? [])
+    const affectedWorkstreams = new Set<string>()
+    const affectedArtifactKinds = new Set<import('../types/events').ArtifactKind>()
+    for (const artifactId of affectedArtifactIds) {
+      const artifact = deps.knowledgeStoreImpl?.getArtifact(artifactId)
+      if (!artifact) continue
+      affectedWorkstreams.add(artifact.workstream)
+      affectedArtifactKinds.add(artifact.kind)
+    }
 
     // Apply trust delta based on resolution type
     const trustOutcome = mapResolutionToTrustOutcome(body.resolution, resolved.event)
     const previousScore = deps.trustEngine.getScore(agentId) ?? 50
+    let effectiveDelta = 0
     if (trustOutcome) {
-      deps.trustEngine.applyOutcome(agentId, trustOutcome, deps.tickService.currentTick())
+      effectiveDelta = deps.trustEngine.applyOutcome(
+        agentId,
+        trustOutcome,
+        currentTick,
+        {
+          artifactKinds: [...affectedArtifactKinds],
+          workstreams: [...affectedWorkstreams],
+          toolCategory: resolved.event.subtype === 'tool_approval'
+            ? classifyToolCategory(resolved.event.toolName)
+            : undefined,
+        }
+      )
     }
     const newScore = deps.trustEngine.getScore(agentId) ?? 50
+    for (const domainOutcome of deps.trustEngine.flushDomainLog(agentId)) {
+      deps.knowledgeStoreImpl?.appendAuditLog(
+        'trust_domain_outcome',
+        agentId,
+        'record',
+        agentId,
+        domainOutcome
+      )
+    }
+    deps.knowledgeStoreImpl?.appendAuditLog(
+      'trust_outcome',
+      decisionId,
+      'decision_resolution',
+      agentId,
+      {
+        agentId,
+        outcome: trustOutcome,
+        effectiveDelta,
+        newScore,
+        tick: currentTick,
+        decisionSubtype: resolved.event.subtype,
+        severity: resolved.event.subtype === 'option' ? resolved.event.severity : resolved.event.severity,
+        blastRadius: resolved.event.subtype === 'option' ? resolved.event.blastRadius : resolved.event.blastRadius,
+        toolName: resolved.event.subtype === 'tool_approval' ? resolved.event.toolName : undefined,
+        affectedArtifactIds,
+        affectedWorkstreams: [...affectedWorkstreams],
+        affectedArtifactKinds: [...affectedArtifactKinds],
+      }
+    )
 
     // Broadcast trust update to frontend
     if (previousScore !== newScore) {
@@ -86,4 +140,16 @@ export function createDecisionsRouter(deps: DecisionsDeps): Router {
   })
 
   return router
+}
+
+function classifyToolCategory(toolName: string | undefined): string | undefined {
+  if (!toolName) return undefined
+  const normalized = toolName.toLowerCase()
+  if (normalized.includes('read') || normalized.includes('list') || normalized.includes('grep') || normalized.includes('search') || normalized.includes('cat')) {
+    return 'read'
+  }
+  if (normalized.includes('write') || normalized.includes('edit') || normalized.includes('patch') || normalized.includes('update')) {
+    return 'write'
+  }
+  return 'execute'
 }

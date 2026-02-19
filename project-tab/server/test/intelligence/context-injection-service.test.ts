@@ -83,6 +83,7 @@ interface TestFixture {
   tickService: TickService
   eventBus: EventBus
   knowledgeStore: KnowledgeStore
+  appendAuditLog: ReturnType<typeof vi.fn>
   registry: AgentRegistry
   gateway: AgentGateway
   controlMode: ControlModeManager
@@ -90,14 +91,16 @@ interface TestFixture {
   plugin: AgentPlugin
 }
 
-function createFixture(mode: ControlMode = 'adaptive'): TestFixture {
+function createFixture(mode: ControlMode = 'adaptive', withAuditLog = true): TestFixture {
   const tickService = new TickService({ mode: 'manual' })
   const eventBus = new EventBus()
 
   let snapshotVersion = 1
+  const appendAuditLog = vi.fn()
   const knowledgeStore: KnowledgeStore = {
     getSnapshot: vi.fn().mockImplementation(async () => makeSnapshot(snapshotVersion++)),
     appendEvent: vi.fn().mockResolvedValue(undefined),
+    ...(withAuditLog ? { appendAuditLog } : {}),
   }
 
   const handles = new Map<string, AgentHandle>()
@@ -135,7 +138,7 @@ function createFixture(mode: ControlMode = 'adaptive'): TestFixture {
     controlMode,
   )
 
-  return { tickService, eventBus, knowledgeStore, registry, gateway, controlMode, service, plugin }
+  return { tickService, eventBus, knowledgeStore, appendAuditLog, registry, gateway, controlMode, service, plugin }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────
@@ -1070,6 +1073,109 @@ describe('ContextInjectionService', () => {
       await service.scheduleInjection('agent-1', 'periodic', 'recommended')
 
       expect(service.getAgentState('agent-1')!.lastSnapshotVersion).toBe(77)
+
+      service.stop()
+    })
+  })
+
+  describe('injection utility recording', () => {
+    it('records post-injection activity and flushes after the window closes', async () => {
+      const { service, tickService, registry, eventBus, knowledgeStore, appendAuditLog } = createFixture()
+      service.start()
+
+      registry.registerHandle(makeHandle('agent-1'))
+      service.registerAgent(makeBrief({
+        agentId: 'agent-1',
+        contextInjectionPolicy: {
+          periodicIntervalTicks: null,
+          reactiveEvents: [],
+          stalenessThreshold: null,
+          maxInjectionsPerHour: 12,
+          cooldownTicks: 0,
+        },
+      }))
+
+      ;(knowledgeStore.getSnapshot as any).mockResolvedValueOnce(makeSnapshot(99))
+      await service.scheduleInjection('agent-1', 'periodic', 'recommended')
+
+      eventBus.publish(makeEnvelope({
+        type: 'artifact',
+        agentId: 'agent-1',
+        artifactId: 'art-post',
+        name: 'post.ts',
+        kind: 'code',
+        workstream: 'ws-frontend',
+        status: 'draft',
+        qualityScore: 0.8,
+        provenance: { createdBy: 'agent-1', createdAt: new Date().toISOString() },
+      }))
+
+      for (let i = 0; i < 25; i++) {
+        tickService.advance(1)
+      }
+
+      await vi.waitFor(() => {
+        expect(appendAuditLog).toHaveBeenCalled()
+      })
+
+      const details = appendAuditLog.mock.calls[0][4] as {
+        agentEventsInWindow: number
+        artifactIdsReferencedInWindow: string[]
+      }
+      expect(details.agentEventsInWindow).toBeGreaterThan(0)
+      expect(details.artifactIdsReferencedInWindow).toContain('art-post')
+
+      service.stop()
+    })
+
+    it('flushes pending records when the agent is removed', async () => {
+      const { service, registry, knowledgeStore, appendAuditLog } = createFixture()
+      service.start()
+
+      registry.registerHandle(makeHandle('agent-1'))
+      service.registerAgent(makeBrief({
+        agentId: 'agent-1',
+        contextInjectionPolicy: {
+          periodicIntervalTicks: null,
+          reactiveEvents: [],
+          stalenessThreshold: null,
+          maxInjectionsPerHour: 12,
+          cooldownTicks: 0,
+        },
+      }))
+
+      ;(knowledgeStore.getSnapshot as any).mockResolvedValueOnce(makeSnapshot(5))
+      await service.scheduleInjection('agent-1', 'periodic', 'recommended')
+
+      service.removeAgent('agent-1')
+      expect(appendAuditLog).toHaveBeenCalled()
+
+      service.stop()
+    })
+
+    it('keeps records unflushed when audit persistence is unavailable', async () => {
+      const { service, registry, knowledgeStore } = createFixture('adaptive', false)
+      service.start()
+
+      registry.registerHandle(makeHandle('agent-1'))
+      service.registerAgent(makeBrief({
+        agentId: 'agent-1',
+        contextInjectionPolicy: {
+          periodicIntervalTicks: null,
+          reactiveEvents: [],
+          stalenessThreshold: null,
+          maxInjectionsPerHour: 12,
+          cooldownTicks: 0,
+        },
+      }))
+
+      ;(knowledgeStore.getSnapshot as any).mockResolvedValueOnce(makeSnapshot(5))
+      await service.scheduleInjection('agent-1', 'periodic', 'recommended')
+      const flushed = service.flushInjectionRecords('agent-1')
+
+      expect(flushed).toEqual([])
+      const state = service.getAgentState('agent-1') as any
+      expect(state.recentInjections[0].flushed).toBe(false)
 
       service.stop()
     })

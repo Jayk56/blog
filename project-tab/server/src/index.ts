@@ -12,6 +12,8 @@ import { KnowledgeStore as KnowledgeStoreImpl } from './intelligence/knowledge-s
 import { CoherenceMonitor } from './intelligence/coherence-monitor'
 import { MockEmbeddingService } from './intelligence/embedding-service'
 import { MockCoherenceReviewService } from './intelligence/coherence-review-service'
+import { VoyageEmbeddingService } from './intelligence/voyage-embedding-service'
+import { LlmReviewService } from './intelligence/llm-review-service'
 import { ContextInjectionService } from './intelligence/context-injection-service'
 import { ChildProcessManager } from './gateway/child-process-manager'
 import { LocalProcessPlugin } from './gateway/local-process-plugin'
@@ -35,7 +37,17 @@ const backendUrl = process.env.BACKEND_URL ?? `http://localhost:${port}`
 const defaultPlugin = process.env.DEFAULT_PLUGIN ?? 'openai'
 const shimCommand = process.env.SHIM_COMMAND ?? 'python'
 const shimArgs = (process.env.SHIM_ARGS ?? '-m,adapter_shim,--mock').split(',')
-const enableLayer2 = process.env.ENABLE_LAYER2 === 'true'
+const voyageApiKey = process.env.VOYAGE_API_KEY
+const voyageEmbeddingModel = (process.env.VOYAGE_EMBEDDING_MODEL ?? 'voyage-4-lite') as 'voyage-4-lite' | 'voyage-code-3' | 'voyage-4'
+const anthropicApiKey = process.env.ANTHROPIC_API_KEY
+const openAiApiKey = process.env.OPENAI_API_KEY
+const defaultReviewModel = anthropicApiKey ? 'claude-sonnet-4-5-20250929' : 'gpt-4o-mini'
+const coherenceReviewModel = process.env.COHERENCE_REVIEW_MODEL ?? defaultReviewModel
+const enableLayer2 = process.env.ENABLE_LAYER2 === 'true' || Boolean(anthropicApiKey || openAiApiKey)
+const enableLayer1c = process.env.ENABLE_LAYER1C === 'true'
+const layer1cScanIntervalTicks = Number(process.env.LAYER1C_SCAN_INTERVAL_TICKS ?? 300)
+const layer1cMaxCorpusTokens = Number(process.env.LAYER1C_MAX_CORPUS_TOKENS ?? 200_000)
+const layer1cModel = process.env.LAYER1C_MODEL ?? coherenceReviewModel
 const tokenTtlMs = Number(process.env.TOKEN_TTL_MS ?? 3_600_000)
 const apiAuthEnabled = process.env.API_AUTH_ENABLED === 'true'
 const apiAuthTtlMs = Number(process.env.API_AUTH_TTL_MS ?? 8 * 60 * 60 * 1000)
@@ -77,15 +89,60 @@ async function bootstrap(): Promise<void> {
 
   // Knowledge store and coherence monitor
   const knowledgeStoreImpl = new KnowledgeStoreImpl(dbPath)
-  const coherenceMonitor = new CoherenceMonitor({ enableLayer2 })
+  const coherenceMonitor = new CoherenceMonitor({
+    enableLayer2,
+    enableLayer1c,
+    embeddingModel: voyageEmbeddingModel,
+    layer2Model: coherenceReviewModel,
+    layer1cScanIntervalTicks,
+    layer1cMaxCorpusTokens,
+    layer1cModel,
+  })
 
   // Wire coherence monitor services
-  const embeddingService = new MockEmbeddingService()
-  const reviewService = new MockCoherenceReviewService()
+  const embeddingService = voyageApiKey
+    ? new VoyageEmbeddingService({
+      apiKey: voyageApiKey,
+      model: voyageEmbeddingModel,
+    })
+    : new MockEmbeddingService()
+
+  const reviewService = anthropicApiKey
+    ? new LlmReviewService({
+      provider: 'anthropic',
+      apiKey: anthropicApiKey,
+      model: coherenceReviewModel,
+    })
+    : openAiApiKey
+      ? new LlmReviewService({
+        provider: 'openai',
+        apiKey: openAiApiKey,
+        model: coherenceReviewModel,
+      })
+      : new MockCoherenceReviewService()
+
   coherenceMonitor.setEmbeddingService(embeddingService)
   coherenceMonitor.setReviewService(reviewService)
-  coherenceMonitor.setArtifactContentProvider((_artifactId) => {
-    // Content retrieval not yet implemented; Layer 2 review will skip content-less artifacts
+  if (reviewService instanceof LlmReviewService) {
+    coherenceMonitor.setSweepService(reviewService)
+  }
+  coherenceMonitor.setArtifactContentProvider((artifactId) => {
+    const artifact = knowledgeStoreImpl.getArtifact(artifactId)
+    if (!artifact) return undefined
+
+    const direct = knowledgeStoreImpl.getArtifactContent(artifact.agentId, artifactId)
+    if (direct) return direct.content
+
+    // Gap 2 fallback: if URI follows artifact://agentId/artifactId, resolve from content store.
+    if (artifact.uri?.startsWith('artifact://')) {
+      const trimmed = artifact.uri.slice('artifact://'.length)
+      const [agentId, uriArtifactId] = trimmed.split('/', 2)
+      if (agentId && uriArtifactId) {
+        const fromUri = knowledgeStoreImpl.getArtifactContent(agentId, uriArtifactId)
+        if (fromUri) return fromUri.content
+      }
+    }
+
     return undefined
   })
   coherenceMonitor.subscribeTo(tickService)
@@ -96,7 +153,10 @@ async function bootstrap(): Promise<void> {
     },
     async appendEvent(): Promise<void> {
       // Events are delivered via EventBus
-    }
+    },
+    appendAuditLog(entityType, entityId, action, callerAgentId, details) {
+      knowledgeStoreImpl.appendAuditLog(entityType, entityId, action, callerAgentId, details)
+    },
   }
 
   // Checkpoint store

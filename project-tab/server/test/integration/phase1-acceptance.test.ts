@@ -29,6 +29,8 @@ import { TrustEngine, type TrustOutcome } from '../../src/intelligence/trust-eng
 import { DecisionQueue } from '../../src/intelligence/decision-queue'
 import { KnowledgeStore } from '../../src/intelligence/knowledge-store'
 import { CoherenceMonitor } from '../../src/intelligence/coherence-monitor'
+import { MockEmbeddingService, createVectorsWithSimilarity } from '../../src/intelligence/embedding-service'
+import { MockCoherenceReviewService } from '../../src/intelligence/coherence-review-service'
 import { validateAdapterEvent, spawnAgentRequestSchema } from '../../src/validation/schemas'
 import { clearQuarantine, getQuarantined, quarantineEvent } from '../../src/validation/quarantine'
 
@@ -1409,6 +1411,94 @@ describe('Phase 1 Acceptance Criteria', () => {
 
       streamClient.close()
       client.close()
+    })
+  })
+
+  // ────────────────────────────────────────────────────────────────
+  // AC-3A-5: Layer 2 review receives artifact content from provider
+  // ────────────────────────────────────────────────────────────────
+  describe('AC-3A-5: Artifact content flows to Layer 2 review', () => {
+    it('Layer 2 review receives artifact content (not undefined) when reviewing promoted candidates', async () => {
+      const dims = 8
+      const monitor = new CoherenceMonitor({
+        layer1PromotionThreshold: 0.85,
+        layer1AdvisoryThreshold: 0.70,
+        layer2MaxReviewsPerHour: 10,
+        enableLayer2: true,
+      })
+
+      const embeddingService = new MockEmbeddingService(dims)
+      const reviewService = new MockCoherenceReviewService()
+      monitor.setEmbeddingService(embeddingService)
+      monitor.setReviewService(reviewService)
+
+      // Artifact content keyed by artifact ID
+      const contentA = 'export function processOrder(order: Order) { return validate(order) }'
+      const contentB = 'export function handleOrder(order: Order) { return validate(order) }'
+      const contents = new Map<string, string>()
+      contents.set('art-content-a', contentA)
+      contents.set('art-content-b', contentB)
+
+      // Wire content provider (the 3A-5 integration point under test)
+      monitor.setArtifactContentProvider((id) => contents.get(id))
+
+      // Register embeddings with high similarity (above promotion threshold)
+      const [vecA, vecB] = createVectorsWithSimilarity(0.95, dims)
+      embeddingService.registerEmbedding(contentA, vecA)
+      embeddingService.registerEmbedding(contentB, vecB)
+
+      // Two artifacts in different workstreams
+      const artifactA: ArtifactEvent = {
+        type: 'artifact',
+        agentId: 'agent-content-a',
+        artifactId: 'art-content-a',
+        name: 'order-processor.ts',
+        kind: 'code',
+        workstream: 'ws-backend',
+        status: 'draft',
+        qualityScore: 0.9,
+        provenance: { createdBy: 'agent-content-a', createdAt: '2026-02-10T00:00:00.000Z' },
+      }
+
+      const artifactB: ArtifactEvent = {
+        type: 'artifact',
+        agentId: 'agent-content-b',
+        artifactId: 'art-content-b',
+        name: 'order-handler.ts',
+        kind: 'code',
+        workstream: 'ws-frontend',
+        status: 'draft',
+        qualityScore: 0.85,
+        provenance: { createdBy: 'agent-content-b', createdAt: '2026-02-10T00:00:01.000Z' },
+      }
+
+      const artifacts = new Map<string, ArtifactEvent>()
+      artifacts.set('art-content-a', artifactA)
+      artifacts.set('art-content-b', artifactB)
+
+      monitor.processArtifact(artifactA)
+      monitor.processArtifact(artifactB)
+
+      // Run Layer 1 scan to produce promoted candidates
+      await monitor.runLayer1Scan(
+        1,
+        (id) => artifacts.get(id),
+        (id) => contents.get(id),
+      )
+
+      // Run Layer 2 review (uses configured content provider from setArtifactContentProvider)
+      await monitor.runLayer2Review()
+
+      // The review service should have been called with non-empty artifact contents
+      expect(reviewService.callCount).toBe(1)
+      expect(reviewService.lastRequest).not.toBeNull()
+      const req = reviewService.lastRequest!
+      expect(req.artifactContents.size).toBeGreaterThan(0)
+      expect(req.artifactContents.get('art-content-a')).toBeDefined()
+      expect(req.artifactContents.get('art-content-b')).toBeDefined()
+      // Content should be the actual strings, not undefined
+      expect(req.artifactContents.get('art-content-a')).toContain('processOrder')
+      expect(req.artifactContents.get('art-content-b')).toContain('handleOrder')
     })
   })
 

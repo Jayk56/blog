@@ -214,6 +214,49 @@ export class KnowledgeStore {
     ).run(entityType, entityId, action, callerAgentId ?? null, details ? JSON.stringify(details) : null)
   }
 
+  /** Append a custom audit log entry. */
+  appendAuditLog(entityType: string, entityId: string, action: string, callerAgentId?: string, details?: unknown): void {
+    this.recordAudit(entityType, entityId, action, callerAgentId, details)
+  }
+
+  /** Retrieve audit log entries for diagnostics/tests. */
+  listAuditLog(entityType?: string, entityId?: string): Array<{
+    entityType: string
+    entityId: string
+    action: string
+    callerAgentId?: string
+    timestamp: string
+    details?: unknown
+  }> {
+    const conditions: string[] = []
+    const params: string[] = []
+
+    if (entityType) {
+      conditions.push('entity_type = ?')
+      params.push(entityType)
+    }
+    if (entityId) {
+      conditions.push('entity_id = ?')
+      params.push(entityId)
+    }
+
+    let sql = 'SELECT * FROM audit_log'
+    if (conditions.length > 0) {
+      sql += ` WHERE ${conditions.join(' AND ')}`
+    }
+    sql += ' ORDER BY rowid ASC'
+
+    const rows = this.db.prepare(sql).all(...params) as AuditRow[]
+    return rows.map((row) => ({
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+      action: row.action,
+      callerAgentId: row.caller_agent_id ?? undefined,
+      timestamp: row.timestamp,
+      details: row.details_json ? JSON.parse(row.details_json) : undefined,
+    }))
+  }
+
   // ---------------------------------------------------------------------------
   // Artifacts (with optimistic concurrency)
   // ---------------------------------------------------------------------------
@@ -960,6 +1003,15 @@ interface EventRow {
   event_type: string
   agent_id: string
   event_json: string
+}
+
+interface AuditRow {
+  entity_type: string
+  entity_id: string
+  action: string
+  caller_agent_id: string | null
+  timestamp: string
+  details_json: string | null
 }
 
 interface CheckpointRow {
