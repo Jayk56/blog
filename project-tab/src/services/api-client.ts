@@ -79,6 +79,8 @@ export interface ApiClient {
 
   // Trust
   getAgentTrust(agentId: string): Promise<{ agentId: string; score: number; config: ServerTrustConfig }>;
+  listCalibrationProfiles(): Promise<{ profiles: Array<{ name: string; displayName: string; description: string; active: boolean; config: Record<string, unknown> }>; activeProfile: string }>;
+  activateCalibrationProfile(name: string): Promise<{ activated: boolean; profile: string; displayName: string }>;
 
   // Tick
   advanceTick(steps?: number): Promise<{ tick: number; advancedBy: number; mode: string }>;
@@ -93,10 +95,28 @@ export interface ApiClient {
     description?: string;
     goals?: string[];
     constraints?: string[];
+    checkpoints?: string[];
   }): Promise<{ updated: boolean }>;
+
+  // Briefing
+  generateBriefing(): Promise<{ briefing: string; generatedAt: string }>;
+
+  // Constraint Inference
+  suggestConstraints(): Promise<ConstraintSuggestionResponse[]>;
+  submitConstraintFeedback(suggestionId: string, accepted: boolean, suggestionText?: string): Promise<{ recorded: boolean }>;
 
   // Snapshot (convenience — fetches full state via health + agents + trust)
   getSnapshot(): Promise<ServerKnowledgeSnapshot>;
+}
+
+/** A constraint suggestion returned by the inference service. */
+export interface ConstraintSuggestionResponse {
+  id: string;
+  text: string;
+  reasoning: string;
+  confidence: 'high' | 'medium' | 'low';
+  source: 'override_pattern' | 'coherence_pattern' | 'domain_analysis';
+  relatedEvidence: string[];
 }
 
 // ── Implementation ────────────────────────────────────────────────
@@ -256,6 +276,16 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       return request(baseUrl, `/trust/${encodeURIComponent(agentId)}`);
     },
 
+    async listCalibrationProfiles() {
+      return request(baseUrl, '/trust/profiles');
+    },
+
+    async activateCalibrationProfile(name) {
+      return request(baseUrl, `/trust/profile/${encodeURIComponent(name)}`, {
+        method: 'POST',
+      });
+    },
+
     // ── Tick ────────────────────────────────────────────────
     async advanceTick(steps = 1) {
       return request(baseUrl, '/tick/advance', {
@@ -287,6 +317,30 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       return request(baseUrl, '/project', {
         method: 'PATCH',
         body: JSON.stringify(changes),
+      });
+    },
+
+    // ── Briefing ────────────────────────────────────────────
+    async generateBriefing() {
+      return request<{ briefing: string; generatedAt: string }>(baseUrl, '/project/briefing', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+    },
+
+    // ── Constraint Inference ───────────────────────────────
+    async suggestConstraints() {
+      const data = await request<{ suggestions: ConstraintSuggestionResponse[] }>(baseUrl, '/project/suggest-constraints', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      return data.suggestions;
+    },
+
+    async submitConstraintFeedback(suggestionId, accepted, suggestionText?) {
+      return request(baseUrl, '/project/constraint-feedback', {
+        method: 'POST',
+        body: JSON.stringify({ suggestionId, accepted, suggestionText }),
       });
     },
 

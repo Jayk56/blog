@@ -7,6 +7,9 @@ import type { EventBus } from '../bus'
 import type { WebSocketHub } from '../ws-hub'
 import type { ArtifactEvent } from '../types/events'
 import type { KnowledgeStore as KnowledgeStoreClass } from '../intelligence/knowledge-store'
+import type { BriefingService } from '../intelligence/briefing-service'
+import type { CoherenceMonitor } from '../intelligence/coherence-monitor'
+import type { ConstraintInferenceService } from '../intelligence/constraint-inference-service'
 import type { RecoveryResult } from '../gateway/volume-recovery'
 import type { TrustEngine } from '../intelligence/trust-engine'
 import type { DecisionQueue } from '../intelligence/decision-queue'
@@ -30,6 +33,8 @@ import { createEventsRouter } from './events'
 import { createProjectRouter } from './project'
 import { createToolGateRouter } from './tool-gate'
 import { createTrustRouter } from './trust'
+import { createInsightsRouter } from './insights'
+import { createCoherenceRouter } from './coherence'
 import type { TokenService } from '../gateway/token-service'
 export type { AgentRegistry, ArtifactUploadResult, KnowledgeStore, AgentGateway, CheckpointStore, ControlModeManager } from '../types/service-interfaces'
 
@@ -59,6 +64,12 @@ export interface ApiRouteDeps {
   }
   /** Direct reference to the KnowledgeStore implementation for artifact queries. */
   knowledgeStoreImpl?: KnowledgeStoreClass
+  /** LLM briefing service (undefined when no API key configured). */
+  briefingService?: BriefingService
+  /** Coherence monitor for feedback loop status. */
+  coherenceMonitor?: CoherenceMonitor
+  /** Constraint inference service for suggesting constraints from audit patterns. */
+  constraintInference?: ConstraintInferenceService
 }
 
 /**
@@ -111,6 +122,10 @@ export function createApiRouter(deps: ApiRouteDeps): Router {
   router.use('/tick', createTickRouter({ tickService: deps.tickService }))
   router.use('/project', createProjectRouter(deps))
   router.use('/tool-gate', createToolGateRouter(deps))
+  router.use('/insights', createInsightsRouter(deps))
+  if (deps.coherenceMonitor) {
+    router.use('/coherence', createCoherenceRouter({ coherenceMonitor: deps.coherenceMonitor }))
+  }
 
   return router
 }

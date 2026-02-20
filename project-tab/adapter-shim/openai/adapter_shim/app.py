@@ -67,6 +67,7 @@ def create_app(*, mock: bool = False, workspace: str | None = None) -> FastAPI:
         else:
             runner = CodexRunner(brief, workspace=state.workspace)
         state.runner = runner
+        state.last_brief = brief
         runner.start()
 
         # Give the runner a moment to emit initial events
@@ -97,6 +98,16 @@ def create_app(*, mock: bool = False, workspace: str | None = None) -> FastAPI:
     @app.post("/resume")
     async def resume(agent_state: SerializedAgentState) -> dict:
         brief = agent_state.brief_snapshot
+
+        # Detect continuation (assign-on-idle) by comparing brief identity
+        is_continuation = (
+            state.last_brief is not None
+            and (
+                brief.workstream != state.last_brief.workstream
+                or brief.description != state.last_brief.description
+            )
+        )
+
         if state.mock:
             runner: MockRunner | CodexRunner = MockRunner(brief)
         else:
@@ -105,8 +116,10 @@ def create_app(*, mock: bool = False, workspace: str | None = None) -> FastAPI:
                 brief,
                 workspace=state.workspace,
                 resume_session_id=resume_session_id,
+                continuation=is_continuation,
             )
         state.runner = runner
+        state.last_brief = brief
         runner.start()
         await asyncio.sleep(0.05)
         return runner.handle.model_dump(by_alias=True)
@@ -217,6 +230,7 @@ class AppState:
         self.event_buffer: list = []
         self.ws_connected = False
         self.start_time = time.monotonic()
+        self.last_brief: AgentBrief | None = None
 
 
 def _drain_to_buffer(state: AppState) -> None:

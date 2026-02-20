@@ -15,7 +15,7 @@ ControlMode = Literal["orchestrator", "adaptive", "ecosystem"]
 ArtifactKind = Literal["code", "document", "design", "config", "test", "other"]
 CoherenceCategory = Literal["contradiction", "duplication", "gap", "dependency_violation"]
 ActionKind = Literal["create", "update", "delete", "review", "deploy"]
-AgentStatus = Literal["running", "paused", "waiting_on_human", "completed", "error"]
+AgentStatus = Literal["running", "paused", "waiting_on_human", "completed", "idle", "error"]
 HealthStatus = Literal["healthy", "degraded", "unhealthy"]
 
 
@@ -292,7 +292,7 @@ class SerializedAgentState(BaseModel):
     pending_decision_ids: list[str] = Field(alias="pendingDecisionIds", default_factory=list)
     last_sequence: int = Field(alias="lastSequence")
     serialized_at: str = Field(alias="serializedAt")
-    serialized_by: Literal["pause", "kill_grace", "crash_recovery", "decision_checkpoint"] = Field(alias="serializedBy")
+    serialized_by: Literal["pause", "kill_grace", "crash_recovery", "decision_checkpoint", "idle_completion"] = Field(alias="serializedBy")
     estimated_size_bytes: int = Field(alias="estimatedSizeBytes")
 
     model_config = {"populate_by_name": True}

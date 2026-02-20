@@ -44,7 +44,7 @@ export class MockRunner {
   private _decisionReject: ((reason?: unknown) => void) | null = null
   private _runPromise: Promise<void> | null = null
 
-  constructor(brief: AgentBrief) {
+  constructor(brief: AgentBrief, _options?: { continuation?: boolean }) {
     this.brief = brief
     this.agentId = brief.agentId
     this.sessionId = uuidv4()

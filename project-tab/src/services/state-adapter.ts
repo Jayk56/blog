@@ -26,6 +26,7 @@ import type {
 import type {
   Agent,
   Artifact,
+  Checkpoint,
   CoherenceIssue,
   ControlMode,
   DecisionItem,
@@ -332,11 +333,22 @@ export function adaptStateSyncToState(msg: StateSyncMessage): Partial<ProjectSta
     scoreByDomain: {},
   }));
 
-  // Build a minimal project
+  // Map project config checkpoints (string labels) to frontend Checkpoint objects
+  const checkpoints: Checkpoint[] = (msg.projectConfig?.checkpoints ?? []).map((label, i) => ({
+    id: `cp-${i}`,
+    name: label,
+    trigger: 'custom' as const,
+    description: label,
+    enabled: true,
+    customCondition: null,
+  }));
+
+  // Build project from real config when available, otherwise minimal defaults
+  const cfg = msg.projectConfig;
   const project: Project = {
-    id: 'live-project',
-    name: 'Live Project',
-    description: 'Connected to backend server',
+    id: cfg?.id ?? 'live-project',
+    name: cfg?.title ?? 'Live Project',
+    description: cfg?.description ?? 'Connected to backend server',
     persona: 'live',
     phase: 'execution',
     controlMode: adaptControlMode(msg.controlMode),
@@ -347,8 +359,8 @@ export function adaptStateSyncToState(msg: StateSyncMessage): Partial<ProjectSta
     },
     agents,
     workstreams,
-    goals: [],
-    constraints: [],
+    goals: cfg?.goals ?? [],
+    constraints: cfg?.constraints ?? [],
     currentTick: snapshot.version,
     emergencyBrakeEngaged: false,
     createdAt: snapshot.generatedAt,
@@ -363,7 +375,7 @@ export function adaptStateSyncToState(msg: StateSyncMessage): Partial<ProjectSta
     controlConfig: {
       mode: adaptControlMode(msg.controlMode),
       topology: [],
-      checkpoints: [],
+      checkpoints,
       bias: { value: 50 },
       riskAwareGating: true,
       pendingRecommendations: [],

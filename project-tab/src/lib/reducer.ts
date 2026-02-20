@@ -59,6 +59,7 @@ export const initialState: ProjectState = {
   activeScenarioId: null,
   autoSimulate: false,
   viewingTick: null,
+  briefingSource: 'template',
 };
 
 // ── Scenario registry ─────────────────────────────────────────────
@@ -173,6 +174,14 @@ export function projectReducer(
       next = handleEditConstraint(state, action.index, action.value);
       break;
 
+    case 'set-llm-briefing':
+      next = { ...state, briefing: action.briefing, briefingSource: 'llm' };
+      break;
+
+    case 'reset-briefing':
+      next = { ...state, briefingSource: 'template' };
+      break;
+
     // ── Server-pushed actions ───────────────────────────────────
     case 'server-state-sync':
       next = handleServerStateSync(state, action.serverState);
@@ -211,7 +220,8 @@ function recomputeDerived(state: ProjectState): ProjectState {
   if (!state.project) return state;
 
   const metrics = computeMetrics(state);
-  const briefing = buildBriefing(state);
+  // Don't overwrite LLM-generated briefings with template output
+  const briefing = state.briefingSource === 'llm' ? state.briefing : buildBriefing(state);
   const topology = getTopologyPoints({
     phase: state.project.phase,
     riskLevel: state.project.riskProfile.level,
@@ -665,13 +675,59 @@ function handleServerStateSync(
   merged.activeScenarioId = state.activeScenarioId
   merged.viewingTick = state.viewingTick
 
-  // Preserve user's local brief edits (server may send placeholder values)
+  // Preserve project config fields across state syncs.
   if (state.project && merged.project) {
-    merged.project = {
-      ...merged.project,
-      description: state.project.description,
-      goals: state.project.goals,
-      constraints: state.project.constraints,
+    const incomingProject = merged.project
+
+    // If the state_sync lacked projectConfig, the adapter materializes placeholder
+    // defaults (id='live-project'). Preserve ALL config fields from local state
+    // so real config from a prior sync isn't lost.
+    if (incomingProject.id === 'live-project' && state.project.id !== 'live-project') {
+      merged.project = {
+        ...incomingProject,
+        id: state.project.id,
+        name: state.project.name,
+        description: state.project.description,
+        goals: state.project.goals,
+        constraints: state.project.constraints,
+      }
+    } else {
+      // Server sent real project config — only preserve fields the user has
+      // locally edited. On first connect, state has empty/default values that
+      // should be overwritten by the real config from the server.
+      const hasLocalDescription = state.project.description !== 'Connected to backend server'
+        && state.project.description !== ''
+      const hasLocalGoals = state.project.goals.length > 0
+      const hasLocalConstraints = state.project.constraints.length > 0
+
+      if (hasLocalDescription && incomingProject.description !== state.project.description) {
+        merged.project = { ...merged.project, description: state.project.description }
+      }
+      if (hasLocalGoals && JSON.stringify(incomingProject.goals) !== JSON.stringify(state.project.goals)) {
+        merged.project = { ...merged.project, goals: state.project.goals }
+      }
+      if (hasLocalConstraints && JSON.stringify(incomingProject.constraints) !== JSON.stringify(state.project.constraints)) {
+        merged.project = { ...merged.project, constraints: state.project.constraints }
+      }
+    }
+  }
+
+  // Preserve checkpoint state across syncs. When projectConfig is absent the
+  // adapter produces an empty checkpoints array — keep the existing list so
+  // checkpoint definitions aren't wiped by partial state_sync broadcasts.
+  // When both sides have checkpoints, merge enabled flags by name.
+  const existingCps = state.controlConfig.checkpoints
+  const incomingCps = merged.controlConfig.checkpoints
+  if (existingCps.length > 0 && incomingCps.length === 0) {
+    merged.controlConfig = { ...merged.controlConfig, checkpoints: existingCps }
+  } else if (existingCps.length > 0 && incomingCps.length > 0) {
+    const existingByName = new Map(existingCps.map((cp) => [cp.name, cp.enabled]))
+    merged.controlConfig = {
+      ...merged.controlConfig,
+      checkpoints: incomingCps.map((cp) => {
+        const wasEnabled = existingByName.get(cp.name)
+        return wasEnabled !== undefined ? { ...cp, enabled: wasEnabled } : cp
+      }),
     }
   }
 

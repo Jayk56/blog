@@ -268,6 +268,7 @@ const mayaState: ProjectState = {
   activeScenarioId: 'maya',
   autoSimulate: false,
   viewingTick: null,
+  briefingSource: 'template',
 };
 
 
@@ -546,6 +547,7 @@ The notification system is entering the **integration phase**. Backend services 
   activeScenarioId: 'david',
   autoSimulate: false,
   viewingTick: null,
+  briefingSource: 'template',
 };
 
 
@@ -717,6 +719,7 @@ Team B's authentication redesign is in **execution phase** after the security ag
   activeScenarioId: 'priya',
   autoSimulate: false,
   viewingTick: null,
+  briefingSource: 'template',
 };
 
 
@@ -865,6 +868,7 @@ The knowledge graph is now generated and available in the Map workspace for expl
   activeScenarioId: 'rosa',
   autoSimulate: false,
   viewingTick: null,
+  briefingSource: 'template',
 };
 
 
@@ -1011,6 +1015,7 @@ Assessment phase is **complete**. The architecture agent has audited the existin
   activeScenarioId: 'sam',
   autoSimulate: false,
   viewingTick: null,
+  briefingSource: 'template',
 };
 
 

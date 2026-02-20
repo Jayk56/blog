@@ -226,11 +226,12 @@ const guardrailSpecSchema = z.object({
   action: z.enum(['block', 'warn', 'log'])
 })
 
-const escalationPredicateSchema: z.ZodType<EscalationPredicate> = z.lazy(() =>
+export const escalationPredicateSchema: z.ZodType<EscalationPredicate> = z.lazy(() =>
   z.union([
     z.object({ field: z.literal('confidence'), op: z.enum(['lt', 'gt', 'lte', 'gte']), value: z.number() }),
     z.object({ field: z.literal('blastRadius'), op: z.enum(['eq', 'gte']), value: blastRadiusSchema }),
     z.object({ field: z.literal('trustScore'), op: z.enum(['lt', 'gt', 'lte', 'gte']), value: z.number() }),
+    z.object({ field: z.literal('domainTrustScore'), op: z.enum(['lt', 'gt', 'lte', 'gte']), value: z.number(), domain: artifactKindSchema }),
     z.object({ field: z.literal('affectsMultipleWorkstreams'), op: z.literal('eq'), value: z.boolean() }),
     z.object({ type: z.literal('and'), rules: z.array(escalationPredicateSchema) }),
     z.object({ type: z.literal('or'), rules: z.array(escalationPredicateSchema) })
@@ -300,7 +301,7 @@ export const knowledgeSnapshotSchema = z.object({
       id: z.string(),
       role: z.string(),
       workstream: z.string(),
-      status: z.enum(['running', 'paused', 'waiting_on_human', 'completed', 'error']),
+      status: z.enum(['running', 'paused', 'waiting_on_human', 'completed', 'idle', 'error']),
       pluginName: z.string(),
       modelPreference: z.string().optional()
     })
@@ -463,6 +464,10 @@ export const killAgentRequestSchema = z.object({
 export const pauseAgentRequestSchema = z.object({}).optional()
 export const resumeAgentRequestSchema = z.object({}).optional()
 
+export const assignAgentRequestSchema = z.object({
+  brief: agentBriefSchema,
+})
+
 export const updateAgentBriefRequestSchema = agentBriefSchema.partial()
 
 export const resolveDecisionRequestSchema = z.object({
@@ -495,7 +500,7 @@ export const submitCheckpointRequestSchema = z.object({
   pendingDecisionIds: z.array(z.string()),
   lastSequence: z.number().int().nonnegative(),
   serializedAt: z.string().datetime(),
-  serializedBy: z.enum(['pause', 'kill_grace', 'crash_recovery', 'decision_checkpoint']),
+  serializedBy: z.enum(['pause', 'kill_grace', 'crash_recovery', 'decision_checkpoint', 'idle_completion']),
   estimatedSizeBytes: z.number().int().nonnegative(),
   decisionId: z.string().optional()
 })
@@ -573,6 +578,7 @@ export const projectPatchSchema = z.object({
   description: z.string().optional(),
   goals: z.array(z.string()).optional(),
   constraints: z.array(z.string()).optional(),
+  checkpoints: z.array(z.string()).optional(),
 })
 
 /**

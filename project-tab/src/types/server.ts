@@ -283,6 +283,17 @@ export interface ServerBrakeAction {
   timestamp: string;
 }
 
+// ── Project Config (from backend StateSyncMessage) ───────────────
+
+export interface ServerProjectConfig {
+  id: string;
+  title: string;
+  description: string;
+  goals: string[];
+  checkpoints: string[];
+  constraints: string[];
+}
+
 // ── WebSocket Messages ────────────────────────────────────────────
 
 export interface StateSyncMessage {
@@ -291,6 +302,7 @@ export interface StateSyncMessage {
   activeAgents: ServerAgentHandle[];
   trustScores: Array<{ agentId: string; score: number }>;
   controlMode: ServerControlMode;
+  projectConfig?: ServerProjectConfig;
 }
 
 export interface WorkspaceEventMessage {

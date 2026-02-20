@@ -53,6 +53,56 @@ export interface CoherenceMonitorConfig {
   skipLayer2ForEmbeddings: boolean
 }
 
+/** Configuration for the Layer 1→Layer 2 false-positive auto-tuning feedback loop. */
+export interface CoherenceFeedbackLoopConfig {
+  /** Whether the feedback loop is enabled (default: false). */
+  enabled: boolean
+  /** Minimum Layer 2 reviews in the 24h window before threshold adjustment triggers. */
+  minReviewsBeforeAdjust: number
+  /** FP rate above which the Layer 1 promotion threshold is raised. */
+  fpThresholdHigh: number
+  /** FP rate below which the Layer 1 promotion threshold is lowered. */
+  fpThresholdLow: number
+  /** Amount to increase the promotion threshold per adjustment. */
+  increaseStep: number
+  /** Amount to decrease the promotion threshold per adjustment. */
+  decreaseStep: number
+  /** Minimum allowed value for layer1PromotionThreshold. */
+  minPromotionThreshold: number
+  /** Maximum allowed value for layer1PromotionThreshold. */
+  maxPromotionThreshold: number
+}
+
+const DEFAULT_FEEDBACK_LOOP_CONFIG: CoherenceFeedbackLoopConfig = {
+  enabled: false,
+  minReviewsBeforeAdjust: 20,
+  fpThresholdHigh: 0.50,
+  fpThresholdLow: 0.10,
+  increaseStep: 0.02,
+  decreaseStep: 0.01,
+  minPromotionThreshold: 0.75,
+  maxPromotionThreshold: 0.95,
+}
+
+/** A single threshold adjustment record. */
+export interface ThresholdAdjustmentRecord {
+  timestamp: string
+  oldThreshold: number
+  newThreshold: number
+  fpRate: number
+  reviewCount: number
+}
+
+/** Status snapshot of the feedback loop. */
+export interface FeedbackLoopStatus {
+  enabled: boolean
+  fpRate: number | null
+  reviewCount: number
+  currentThreshold: number
+  lastAdjustment: ThresholdAdjustmentRecord | null
+  windowStart: string
+}
+
 /** Default configuration. */
 const DEFAULT_CONFIG: CoherenceMonitorConfig = {
   layer1ScanIntervalTicks: 10,
@@ -143,8 +193,15 @@ export class CoherenceMonitor {
   private artifactContentProvider: ((artifactId: string) => string | undefined) | null = null
   private corpusArtifacts: { artifactId: string; workstream: string; content: string }[] | null = null
 
-  constructor(config: Partial<CoherenceMonitorConfig> = {}) {
+  // --- Feedback loop state ---
+  private readonly feedbackLoopConfig: CoherenceFeedbackLoopConfig
+  private feedbackWindow = { confirmed: 0, dismissed: 0, windowStart: new Date() }
+  private readonly thresholdHistory: ThresholdAdjustmentRecord[] = []
+  private auditLogger: ((entityType: string, entityId: string, action: string, callerAgentId?: string, details?: unknown) => void) | null = null
+
+  constructor(config: Partial<CoherenceMonitorConfig> = {}, feedbackLoopConfig: Partial<CoherenceFeedbackLoopConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config }
+    this.feedbackLoopConfig = { ...DEFAULT_FEEDBACK_LOOP_CONFIG, ...feedbackLoopConfig }
     this.rateLimiter = new ReviewRateLimiter(this.config.layer2MaxReviewsPerHour)
   }
 
@@ -191,6 +248,104 @@ export class CoherenceMonitor {
     if (this.tickHandler) {
       tickService.removeOnTick(this.tickHandler)
       this.tickHandler = null
+    }
+  }
+
+  /** Attach an audit logger for persisting threshold change history. */
+  setAuditLogger(logger: (entityType: string, entityId: string, action: string, callerAgentId?: string, details?: unknown) => void): void {
+    this.auditLogger = logger
+  }
+
+  // ─── Feedback loop: Layer 1→Layer 2 FP auto-tuning ─────────────
+
+  /** Returns the current feedback loop status. */
+  getFeedbackLoopStatus(): FeedbackLoopStatus {
+    const { confirmed, dismissed, windowStart } = this.feedbackWindow
+    const total = confirmed + dismissed
+    return {
+      enabled: this.feedbackLoopConfig.enabled,
+      fpRate: total > 0 ? dismissed / total : null,
+      reviewCount: total,
+      currentThreshold: this.config.layer1PromotionThreshold,
+      lastAdjustment: this.thresholdHistory.length > 0
+        ? this.thresholdHistory[this.thresholdHistory.length - 1]
+        : null,
+      windowStart: windowStart.toISOString(),
+    }
+  }
+
+  /** Returns the full threshold adjustment history. */
+  getThresholdHistory(): readonly ThresholdAdjustmentRecord[] {
+    return this.thresholdHistory
+  }
+
+  /** Returns the feedback loop configuration. */
+  getFeedbackLoopConfig(): Readonly<CoherenceFeedbackLoopConfig> {
+    return { ...this.feedbackLoopConfig }
+  }
+
+  /**
+   * Update the feedback window with Layer 2 review results and
+   * potentially adjust the Layer 1 promotion threshold.
+   *
+   * Called internally after each Layer 2 review batch.
+   */
+  private updateFeedbackLoop(results: import('./coherence-review-service').CoherenceReviewResult[], now: Date = new Date()): void {
+    if (!this.feedbackLoopConfig.enabled) return
+
+    // Roll window if 24 hours have elapsed
+    const msIn24h = 24 * 60 * 60 * 1000
+    if (now.getTime() - this.feedbackWindow.windowStart.getTime() >= msIn24h) {
+      this.feedbackWindow = { confirmed: 0, dismissed: 0, windowStart: now }
+    }
+
+    // Tally results
+    for (const result of results) {
+      if (result.confirmed) {
+        this.feedbackWindow.confirmed++
+      } else {
+        this.feedbackWindow.dismissed++
+      }
+    }
+
+    // Check if we have enough reviews to adjust
+    const total = this.feedbackWindow.confirmed + this.feedbackWindow.dismissed
+    if (total < this.feedbackLoopConfig.minReviewsBeforeAdjust) return
+
+    const fpRate = this.feedbackWindow.dismissed / total
+    const oldThreshold = this.config.layer1PromotionThreshold
+
+    if (fpRate > this.feedbackLoopConfig.fpThresholdHigh) {
+      // Too many false positives — raise the bar
+      this.config.layer1PromotionThreshold = Math.min(
+        this.config.layer1PromotionThreshold + this.feedbackLoopConfig.increaseStep,
+        this.feedbackLoopConfig.maxPromotionThreshold
+      )
+    } else if (fpRate < this.feedbackLoopConfig.fpThresholdLow) {
+      // Very few false positives — lower the bar
+      this.config.layer1PromotionThreshold = Math.max(
+        this.config.layer1PromotionThreshold - this.feedbackLoopConfig.decreaseStep,
+        this.feedbackLoopConfig.minPromotionThreshold
+      )
+    } else {
+      // In the dead zone — no adjustment
+      return
+    }
+
+    // Only record if the threshold actually changed
+    if (this.config.layer1PromotionThreshold === oldThreshold) return
+
+    const record: ThresholdAdjustmentRecord = {
+      timestamp: now.toISOString(),
+      oldThreshold,
+      newThreshold: this.config.layer1PromotionThreshold,
+      fpRate,
+      reviewCount: total,
+    }
+    this.thresholdHistory.push(record)
+
+    if (this.auditLogger) {
+      this.auditLogger('coherence_feedback_loop', 'layer1_threshold', 'threshold_adjusted', undefined, record)
     }
   }
 
@@ -258,6 +413,8 @@ export class CoherenceMonitor {
     this.dismissedCandidateIds.clear()
     this.lastLayer1cSweepTick = 0
     this.layer1cDirty = false
+    this.feedbackWindow = { confirmed: 0, dismissed: 0, windowStart: new Date() }
+    this.thresholdHistory.length = 0
   }
 
   /** Returns the current path ownership map for debugging. */
@@ -698,7 +855,9 @@ export class CoherenceMonitor {
       this.dismissedCandidateIds.add(result.candidateId)
     }
 
-    return [...autoResults, ...results]
+    const allResults = [...autoResults, ...results]
+    this.updateFeedbackLoop(allResults)
+    return allResults
   }
 
   /** Returns all Layer 2 review results. */

@@ -1,4 +1,4 @@
-import type { BlastRadius, ControlMode, Severity } from './events'
+import type { ArtifactKind, BlastRadius, ControlMode, Severity } from './events'
 import type { KnowledgeSnapshot } from './snapshot'
 
 /** Lightweight JSON schema representation used for structured agent outputs. */
@@ -74,6 +74,7 @@ export type EscalationPredicate =
   | { field: 'confidence'; op: 'lt' | 'gt' | 'lte' | 'gte'; value: number }
   | { field: 'blastRadius'; op: 'eq' | 'gte'; value: BlastRadius }
   | { field: 'trustScore'; op: 'lt' | 'gt' | 'lte' | 'gte'; value: number }
+  | { field: 'domainTrustScore'; op: 'lt' | 'gt' | 'lte' | 'gte'; value: number; domain: ArtifactKind }
   | { field: 'affectsMultipleWorkstreams'; op: 'eq'; value: boolean }
   | { type: 'and'; rules: EscalationPredicate[] }
   | { type: 'or'; rules: EscalationPredicate[] }

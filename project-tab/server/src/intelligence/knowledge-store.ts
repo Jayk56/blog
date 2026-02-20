@@ -172,6 +172,15 @@ export class KnowledgeStore {
         PRIMARY KEY (agent_id, artifact_id)
       );
 
+      CREATE TABLE IF NOT EXISTS domain_trust_scores (
+        agent_id TEXT NOT NULL,
+        domain TEXT NOT NULL,
+        score REAL NOT NULL DEFAULT 50,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (agent_id, domain)
+      );
+      CREATE INDEX IF NOT EXISTS idx_domain_trust_agent ON domain_trust_scores(agent_id);
+
       CREATE TABLE IF NOT EXISTS audit_log (
         rowid INTEGER PRIMARY KEY AUTOINCREMENT,
         entity_type TEXT NOT NULL,
@@ -501,6 +510,42 @@ export class KnowledgeStore {
     `).run(agentId, delta, delta)
 
     this.recordAudit('trust', agentId, 'update', undefined, { delta, reason })
+  }
+
+  // ---------------------------------------------------------------------------
+  // Domain trust scores
+  // ---------------------------------------------------------------------------
+
+  /** Store domain trust scores for an agent. Upserts each domain entry. */
+  storeDomainTrustScores(agentId: string, domainScores: Record<string, number>): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO domain_trust_scores (agent_id, domain, score, updated_at)
+      VALUES (?, ?, ?, datetime('now'))
+      ON CONFLICT(agent_id, domain) DO UPDATE SET
+        score = excluded.score,
+        updated_at = datetime('now')
+    `)
+
+    for (const [domain, score] of Object.entries(domainScores)) {
+      stmt.run(agentId, domain, score)
+    }
+  }
+
+  /** Get domain trust scores for an agent. Returns a Record<domain, score>. */
+  getDomainTrustScores(agentId: string): Record<string, number> {
+    const rows = this.db.prepare(
+      'SELECT domain, score FROM domain_trust_scores WHERE agent_id = ?'
+    ).all(agentId) as Array<{ domain: string; score: number }>
+    const result: Record<string, number> = {}
+    for (const row of rows) {
+      result[row.domain] = row.score
+    }
+    return result
+  }
+
+  /** Delete domain trust scores for an agent. */
+  deleteDomainTrustScores(agentId: string): void {
+    this.db.prepare('DELETE FROM domain_trust_scores WHERE agent_id = ?').run(agentId)
   }
 
   // ---------------------------------------------------------------------------

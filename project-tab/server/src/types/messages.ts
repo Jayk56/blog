@@ -3,6 +3,16 @@ import type { ControlMode, EventEnvelope } from './events'
 import type { AgentHandle } from './plugin'
 import type { Resolution } from './resolution'
 
+/** Subset of ProjectConfig safe to broadcast to frontend clients. */
+export interface ProjectConfigSummary {
+  id: string
+  title: string
+  description: string
+  goals: string[]
+  checkpoints: string[]
+  constraints: string[]
+}
+
 /** Emergency brake scope selector. */
 export type BrakeScope =
   | { type: 'all' }
@@ -40,6 +50,7 @@ export interface StateSyncMessage {
   activeAgents: AgentHandle[]
   trustScores: Array<{ agentId: string; score: number }>
   controlMode: ControlMode
+  projectConfig?: ProjectConfigSummary
 }
 
 /** Brake notification message. */
@@ -67,6 +78,14 @@ export interface DecisionResolvedMessage {
   agentId: string
 }
 
+/** Trust calibration profile change message. */
+export interface TrustConfigUpdateMessage {
+  type: 'trust_config_update'
+  profile: string
+  displayName: string
+  config: Record<string, unknown>
+}
+
 /** Union of all frontend WebSocket messages. */
 export type FrontendMessage =
   | WorkspaceEventMessage
@@ -74,6 +93,7 @@ export type FrontendMessage =
   | BrakeMessage
   | TrustUpdateMessage
   | DecisionResolvedMessage
+  | TrustConfigUpdateMessage
 
 /** Alias matching design doc naming. */
 export type WebSocketMessage = FrontendMessage

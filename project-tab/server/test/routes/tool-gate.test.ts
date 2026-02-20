@@ -5,9 +5,11 @@ import express from 'express'
 import { listenEphemeral } from '../helpers/listen-ephemeral'
 import { createToolGateRouter, classifySeverity, classifyBlastRadius } from '../../src/routes/tool-gate'
 import { DecisionQueue } from '../../src/intelligence/decision-queue'
+import { TrustEngine } from '../../src/intelligence/trust-engine'
 import { EventBus } from '../../src/bus'
 import { TickService } from '../../src/tick'
-import type { AgentRegistry } from '../../src/types/service-interfaces'
+import type { AgentRegistry, AgentGateway, ControlModeManager } from '../../src/types/service-interfaces'
+import type { WebSocketHub } from '../../src/ws-hub'
 import type { AgentHandle } from '../../src/types'
 
 // ── Test helpers ─────────────────────────────────────────────────
@@ -30,7 +32,18 @@ function createTestApp() {
   handles.set('agent-1', { id: 'agent-1', pluginName: 'test', status: 'running', sessionId: 's1' })
   const registry = createMockRegistry(handles)
 
-  const deps = { decisionQueue, eventBus, tickService, registry }
+  const trustEngine = new TrustEngine()
+  const wsHub = { broadcast: () => {}, handleUpgrade: () => {} } as unknown as WebSocketHub
+  const gateway: AgentGateway = {
+    getPlugin: () => undefined,
+    spawn: async () => ({ id: '', pluginName: '', status: 'running' as const, sessionId: '' }),
+  }
+  const controlMode: ControlModeManager = {
+    getMode: () => 'orchestrator' as const,
+    setMode: () => {},
+  }
+
+  const deps = { decisionQueue, eventBus, tickService, registry, trustEngine, wsHub, gateway, controlMode }
 
   const app = express()
   app.use(express.json())

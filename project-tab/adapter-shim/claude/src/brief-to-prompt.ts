@@ -4,8 +4,17 @@
 
 import type { AgentBrief } from './models.js'
 
-export function briefToPrompt(brief: AgentBrief): string {
+export function briefToPrompt(
+  brief: AgentBrief,
+  options?: { continuation?: boolean }
+): string {
   const sections: string[] = []
+
+  if (options?.continuation) {
+    sections.push(
+      'Your previous assignment is complete. Here is your next assignment:\n'
+    )
+  }
 
   sections.push(`You are a ${brief.role} working on the "${brief.workstream}" workstream.`)
   sections.push(brief.description)

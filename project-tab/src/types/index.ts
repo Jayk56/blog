@@ -97,6 +97,8 @@ export type {
   UpdateGoalsAction,
   RemoveConstraintAction,
   EditConstraintAction,
+  SetLlmBriefingAction,
+  ResetBriefingAction,
   ServerStateSyncAction,
   ServerEventAction,
   ServerTrustUpdateAction,

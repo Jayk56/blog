@@ -153,7 +153,7 @@ export class LlmReviewService implements CoherenceReviewService, LlmSweepService
     return issues
   }
 
-  private async requestTextCompletion(prompt: string, modelOverride?: string, disableThinking?: boolean): Promise<string> {
+  async requestTextCompletion(prompt: string, modelOverride?: string, disableThinking?: boolean): Promise<string> {
     let attempt = 0
     while (attempt <= this.config.maxRetries) {
       const response = await this.fetchProvider(prompt, modelOverride, disableThinking)

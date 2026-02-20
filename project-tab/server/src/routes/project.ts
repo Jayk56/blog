@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { randomUUID } from 'node:crypto'
+import { z } from 'zod'
 import { projectSeedSchema, draftBriefRequestSchema, projectPatchSchema } from '../validation/schemas'
 import { parseBody } from './utils'
 import { mergeSeeds, configToSeedPayload } from '../lib/merge-seeds'
@@ -7,8 +8,16 @@ import type { ApiRouteDeps } from './index'
 import type { ProjectConfig, ProjectSeedPayload } from '../types/project-config'
 import type { AgentBrief } from '../types'
 import type { ArtifactEvent } from '../types/events'
+import type { BriefingService } from '../intelligence/briefing-service'
+import type { ConstraintInferenceService } from '../intelligence/constraint-inference-service'
 
-type ProjectDeps = Pick<ApiRouteDeps, 'knowledgeStoreImpl' | 'decisionQueue' | 'trustEngine' | 'controlMode'>
+const constraintFeedbackSchema = z.object({
+  suggestionId: z.string().min(1),
+  accepted: z.boolean(),
+  suggestionText: z.string().optional(),
+})
+
+type ProjectDeps = Pick<ApiRouteDeps, 'knowledgeStoreImpl' | 'decisionQueue' | 'trustEngine' | 'controlMode' | 'registry' | 'briefingService' | 'constraintInference'>
 
 export function createProjectRouter(deps: ProjectDeps): Router {
   const router = Router()
@@ -112,6 +121,7 @@ export function createProjectRouter(deps: ProjectDeps): Router {
       ...(patch.description !== undefined && { description: patch.description }),
       ...(patch.goals !== undefined && { goals: patch.goals }),
       ...(patch.constraints !== undefined && { constraints: patch.constraints }),
+      ...(patch.checkpoints !== undefined && { checkpoints: patch.checkpoints }),
       updatedAt: new Date().toISOString(),
     }
 
@@ -184,6 +194,80 @@ export function createProjectRouter(deps: ProjectDeps): Router {
     }
 
     res.json({ brief })
+  })
+
+  // POST /api/project/briefing
+  router.post('/briefing', async (req, res) => {
+    if (!deps.briefingService) {
+      res.status(503).json({ error: 'No LLM API key configured. Use template briefing instead.' })
+      return
+    }
+
+    const config = deps.knowledgeStoreImpl!.getProjectConfig()
+    if (!config) {
+      res.status(404).json({ error: 'No project seeded' })
+      return
+    }
+
+    try {
+      const pendingDecisions = deps.decisionQueue.listPending().map(q => q.event)
+      const snapshot = deps.knowledgeStoreImpl!.getSnapshot(pendingDecisions)
+      const activeAgents = deps.registry.listHandles()
+      const trustScores = deps.trustEngine.getAllScores()
+      const controlMode = deps.controlMode.getMode()
+
+      const result = await deps.briefingService.generate({
+        projectConfig: config,
+        snapshot,
+        activeAgents,
+        trustScores,
+        controlMode,
+      })
+
+      res.json(result)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      res.status(500).json({ error: `Briefing generation failed: ${message}` })
+    }
+  })
+
+  // POST /api/project/suggest-constraints
+  router.post('/suggest-constraints', (_req, res) => {
+    if (!deps.constraintInference) {
+      res.status(503).json({ error: 'Constraint inference service not available' })
+      return
+    }
+
+    const suggestions = deps.constraintInference.suggestConstraints()
+    res.json({ suggestions })
+  })
+
+  // POST /api/project/constraint-feedback
+  router.post('/constraint-feedback', (req, res) => {
+    if (!deps.constraintInference) {
+      res.status(503).json({ error: 'Constraint inference service not available' })
+      return
+    }
+
+    const body = parseBody(req, res, constraintFeedbackSchema)
+    if (!body) return
+
+    deps.constraintInference.recordFeedback(body.suggestionId, body.accepted, body.suggestionText)
+
+    // If accepted and suggestionText provided, auto-add to project constraints
+    if (body.accepted && body.suggestionText) {
+      const config = deps.knowledgeStoreImpl!.getProjectConfig()
+      if (config) {
+        const updated = {
+          ...config,
+          constraints: [...config.constraints, body.suggestionText],
+          updatedAt: new Date().toISOString(),
+        }
+        deps.knowledgeStoreImpl!.storeProjectConfig(updated)
+      }
+    }
+
+    res.json({ recorded: true, suggestionId: body.suggestionId, accepted: body.accepted })
   })
 
   return router

@@ -15,6 +15,8 @@ import { MockCoherenceReviewService } from './intelligence/coherence-review-serv
 import { VoyageEmbeddingService } from './intelligence/voyage-embedding-service'
 import { LlmReviewService } from './intelligence/llm-review-service'
 import { ContextInjectionService } from './intelligence/context-injection-service'
+import { BriefingService } from './intelligence/briefing-service'
+import { ConstraintInferenceService } from './intelligence/constraint-inference-service'
 import { ChildProcessManager } from './gateway/child-process-manager'
 import { LocalProcessPlugin } from './gateway/local-process-plugin'
 import { AuthService } from './auth'
@@ -146,6 +148,17 @@ async function bootstrap(): Promise<void> {
     return undefined
   })
   coherenceMonitor.subscribeTo(tickService)
+  coherenceMonitor.setAuditLogger((entityType, entityId, action, callerAgentId, details) => {
+    knowledgeStoreImpl.appendAuditLog(entityType, entityId, action, callerAgentId, details)
+  })
+
+  // Briefing service (only when a real LLM review service is available)
+  const briefingService = reviewService instanceof LlmReviewService
+    ? new BriefingService(reviewService)
+    : undefined
+
+  // Constraint inference service
+  const constraintInference = new ConstraintInferenceService(knowledgeStoreImpl)
 
   const knowledgeStore: KnowledgeStore = {
     async getSnapshot(): Promise<KnowledgeSnapshot> {
@@ -229,12 +242,25 @@ async function bootstrap(): Promise<void> {
 
   // ── WebSocket hub ───────────────────────────────────────────────────
 
-  const wsHub = new WebSocketHub(() => ({
-    snapshot: knowledgeStoreImpl.getSnapshot(decisionQueue.listPending().map((q) => q.event)),
-    activeAgents: registry.listHandles(),
-    trustScores: trustEngine.getAllScores(),
-    controlMode: currentControlMode
-  }))
+  const wsHub = new WebSocketHub(() => {
+    const cfg = knowledgeStoreImpl.getProjectConfig()
+    return {
+      snapshot: knowledgeStoreImpl.getSnapshot(decisionQueue.listPending().map((q) => q.event)),
+      activeAgents: registry.listHandles(),
+      trustScores: trustEngine.getAllScores(),
+      controlMode: currentControlMode,
+      // Project only the fields the frontend needs — omit repoRoot, provenance,
+      // defaultTools, defaultEscalation, workstreams, etc.
+      projectConfig: cfg ? {
+        id: cfg.id,
+        title: cfg.title,
+        description: cfg.description,
+        goals: cfg.goals,
+        checkpoints: cfg.checkpoints,
+        constraints: cfg.constraints,
+      } : undefined,
+    }
+  })
 
   // ── Wire app ────────────────────────────────────────────────────────
 
@@ -259,6 +285,9 @@ async function bootstrap(): Promise<void> {
       },
     } : undefined,
     knowledgeStoreImpl,
+    briefingService,
+    coherenceMonitor,
+    constraintInference,
   })
 
   const server = createServer(app as any)

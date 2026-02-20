@@ -46,6 +46,7 @@ describe('E2E: bootstrap CLI -> server -> draft-brief', () => {
       decisionQueue,
       trustEngine: {} as any,
       controlMode,
+      registry: { listHandles: () => [] } as any,
     }))
 
     server = createServer(app as any)

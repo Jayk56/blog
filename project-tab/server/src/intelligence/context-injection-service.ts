@@ -12,6 +12,7 @@ import type {
 } from '../types'
 import type { ControlMode, Severity } from '../types/events'
 import type { AgentRegistry, AgentGateway, KnowledgeStore, ControlModeManager } from '../types/service-interfaces'
+import { InjectionOptimizer } from './injection-optimizer'
 
 /**
  * Per-agent injection tracking state.
@@ -85,6 +86,25 @@ const DEFAULT_POLICIES: Record<ControlMode, ContextInjectionPolicy> = {
   },
 }
 
+/** Configuration for self-tuning injection intervals. */
+export interface SelfTuningConfig {
+  /** Whether self-tuning is enabled. Default: false. */
+  enabled: boolean
+  /** Number of flushed injection records to accumulate before running analysis. */
+  analysisThreshold: number
+  /** Minimum interval ticks (floor clamp). */
+  minInterval: number
+  /** Maximum interval ticks (ceiling clamp). */
+  maxInterval: number
+}
+
+const DEFAULT_SELF_TUNING: SelfTuningConfig = {
+  enabled: false,
+  analysisThreshold: 10,
+  minInterval: 5,
+  maxInterval: 100,
+}
+
 /** Severity ordering for >= comparison in coherence_issue triggers. */
 const SEVERITY_ORDER: Record<Severity, number> = {
   warning: 0,
@@ -111,6 +131,12 @@ export class ContextInjectionService {
   private tickHandler: ((tick: number) => void) | null = null
   private busSubscriptionId: string | null = null
 
+  /** Self-tuning state. */
+  private readonly selfTuning: SelfTuningConfig
+  private readonly optimizer = new InjectionOptimizer()
+  private flushedRecordsForTuning: InjectionRecord[] = []
+  private tunedIntervals = new Map<ControlMode, number>()
+
   constructor(
     private readonly tickService: TickService,
     private readonly eventBus: EventBus,
@@ -118,7 +144,10 @@ export class ContextInjectionService {
     private readonly registry: AgentRegistry,
     private readonly gateway: AgentGateway,
     private readonly controlMode: ControlModeManager,
-  ) {}
+    selfTuningConfig?: Partial<SelfTuningConfig>,
+  ) {
+    this.selfTuning = { ...DEFAULT_SELF_TUNING, ...selfTuningConfig }
+  }
 
   /** Subscribe to tick service and event bus. */
   start(): void {
@@ -174,13 +203,19 @@ export class ContextInjectionService {
     return this.agents.get(agentId)
   }
 
-  /** Get the effective policy for an agent. */
+  /** Get the effective policy for an agent, incorporating self-tuned intervals. */
   getEffectivePolicy(agentId: string): ContextInjectionPolicy {
     const state = this.agents.get(agentId)
     if (state?.brief.contextInjectionPolicy) {
       return state.brief.contextInjectionPolicy
     }
-    return DEFAULT_POLICIES[this.controlMode.getMode()]
+    const mode = this.controlMode.getMode()
+    const base = DEFAULT_POLICIES[mode]
+    const tuned = this.tunedIntervals.get(mode)
+    if (tuned !== undefined) {
+      return { ...base, periodicIntervalTicks: tuned }
+    }
+    return base
   }
 
   /** Get default policy for a given control mode. */
@@ -369,7 +404,39 @@ export class ContextInjectionService {
       flushed.push(copy)
     }
 
+    // Feed self-tuning loop
+    if (this.selfTuning.enabled && flushed.length > 0) {
+      this.flushedRecordsForTuning.push(...flushed)
+      if (this.flushedRecordsForTuning.length >= this.selfTuning.analysisThreshold) {
+        this.runSelfTuning()
+      }
+    }
+
     return flushed
+  }
+
+  /** Whether self-tuning is currently enabled. */
+  get selfTuningEnabled(): boolean {
+    return this.selfTuning.enabled
+  }
+
+  /** Get the current tuned intervals (for inspection/testing). */
+  getTunedIntervals(): ReadonlyMap<ControlMode, number> {
+    return this.tunedIntervals
+  }
+
+  // ── Self-tuning ────────────────────────────────────────────────
+
+  private runSelfTuning(): void {
+    const report = this.optimizer.analyzeEfficiency(this.flushedRecordsForTuning)
+    const modes: ControlMode[] = ['orchestrator', 'adaptive', 'ecosystem']
+    for (const mode of modes) {
+      const current = this.tunedIntervals.get(mode) ?? DEFAULT_POLICIES[mode].periodicIntervalTicks!
+      const suggested = this.optimizer.suggestInterval(current, report.overlapRate)
+      this.tunedIntervals.set(mode, suggested)
+    }
+    // Reset accumulator
+    this.flushedRecordsForTuning = []
   }
 
   // ── Helpers ─────────────────────────────────────────────────────

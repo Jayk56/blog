@@ -13,6 +13,7 @@ import QualityDial from './QualityDial.js'
 import TrustTrajectories from './TrustTrajectories.js'
 import ReviewPatterns from './ReviewPatterns.js'
 import DecisionLog from './DecisionLog.js'
+import CalibrationProfileSelector from './CalibrationProfileSelector.js'
 
 export default function ControlsWorkspace() {
   const state = useProjectState()
@@ -38,13 +39,14 @@ export default function ControlsWorkspace() {
         </p>
       </div>
 
-      {/* Mode + Topology row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Mode + Quality + Calibration row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <ModeSelector
           currentMode={state.controlConfig.mode}
           recommendations={state.controlConfig.pendingRecommendations}
         />
         <QualityDial bias={state.controlConfig.bias} />
+        <CalibrationProfileSelector />
       </div>
 
       {/* Control topology */}

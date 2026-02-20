@@ -38,12 +38,14 @@ class CodexRunner:
         *,
         workspace: str | None = None,
         resume_session_id: str | None = None,
+        continuation: bool = False,
     ) -> None:
         self.brief = brief
         self.agent_id = brief.agent_id
         self.session_id = resume_session_id or str(uuid.uuid4())
         self._workspace = workspace
         self._resume_session_id = resume_session_id
+        self._continuation = continuation
         self._factory = EventFactory(run_id=str(uuid.uuid4()))
         self._mapper = CodexEventMapper(agent_id=self.agent_id, workstream=brief.workstream)
         self._status = AgentHandle(
@@ -75,7 +77,7 @@ class CodexRunner:
         self._event_buffer.append(adapter_event)
 
     async def _spawn_and_read(self) -> None:
-        prompt = brief_to_prompt(self.brief)
+        prompt = brief_to_prompt(self.brief, continuation=self._continuation)
 
         if self._resume_session_id:
             cmd = ["codex", "exec"]

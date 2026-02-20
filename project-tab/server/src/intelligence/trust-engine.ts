@@ -45,6 +45,23 @@ export interface TrustCalibrationConfig {
   diminishingReturnThresholdLow: number
   deltaTable: Partial<Record<TrustOutcome, number>>
   calibrationMode: boolean
+  /** Max score an inactive agent can retain. Applied after normal decay when agent idle > inactivityThresholdTicks. */
+  decayCeiling: number
+  /** Number of ticks of inactivity before decayCeiling is enforced. */
+  inactivityThresholdTicks: number
+  /** Whether risk-weighted deltas are enabled. */
+  riskWeightingEnabled: boolean
+  /** Multipliers per blast-radius level for positive trust deltas. */
+  riskWeightMap: Record<string, number>
+}
+
+/** Default risk-weight multipliers per blast-radius level. */
+const DEFAULT_RISK_WEIGHT_MAP: Record<string, number> = {
+  trivial: 0.5,
+  small: 0.75,
+  medium: 1.0,
+  large: 1.5,
+  unknown: 1.0
 }
 
 /** Defaults matching the design doc. */
@@ -57,7 +74,11 @@ const DEFAULT_CONFIG: TrustCalibrationConfig = {
   diminishingReturnThresholdHigh: 90,
   diminishingReturnThresholdLow: 20,
   deltaTable: {},
-  calibrationMode: false
+  calibrationMode: false,
+  decayCeiling: 50,
+  inactivityThresholdTicks: 0,
+  riskWeightingEnabled: false,
+  riskWeightMap: { ...DEFAULT_RISK_WEIGHT_MAP }
 }
 
 /** Per-agent trust state tracked internally. */
@@ -65,6 +86,12 @@ interface AgentTrustState {
   score: number
   lastActivityTick: number
   decayAccumulator: number
+  /** Per-domain trust scores, lazily initialized on first domain outcome. */
+  domainScores: Map<ArtifactKind, number>
+  /** Per-domain decay accumulators, mirrors decayAccumulator logic per-domain. */
+  domainDecayAccumulators: Map<ArtifactKind, number>
+  /** Per-domain last activity tick for independent decay. */
+  domainLastActivityTick: Map<ArtifactKind, number>
 }
 
 /** Calibration log entry emitted when calibrationMode is true. */
@@ -83,6 +110,7 @@ export interface TrustOutcomeContext {
   artifactKinds?: ArtifactKind[]
   workstreams?: string[]
   toolCategory?: string
+  blastRadius?: string
 }
 
 /** Domain-tagged trust outcome record for deferred analysis. */
@@ -136,13 +164,18 @@ export function mapResolutionToTrustOutcome(
  * and supports a calibration mode for tuning.
  */
 export class TrustEngine {
-  private readonly config: TrustCalibrationConfig
+  private config: TrustCalibrationConfig
   private readonly agents = new Map<string, AgentTrustState>()
   private readonly calibrationLog: CalibrationLogEntry[] = []
   private readonly domainOutcomeLogs = new Map<string, DomainOutcomeRecord[]>()
   private tickHandler: ((tick: number) => void) | null = null
 
   constructor(config: Partial<TrustCalibrationConfig> = {}) {
+    this.config = { ...DEFAULT_CONFIG, ...config }
+  }
+
+  /** Reconfigure the engine at runtime. Existing agent scores are preserved. */
+  reconfigure(config: Partial<TrustCalibrationConfig>): void {
     this.config = { ...DEFAULT_CONFIG, ...config }
   }
 
@@ -171,7 +204,10 @@ export class TrustEngine {
       this.agents.set(agentId, {
         score: this.config.initialScore,
         lastActivityTick: currentTick,
-        decayAccumulator: 0
+        decayAccumulator: 0,
+        domainScores: new Map(),
+        domainDecayAccumulators: new Map(),
+        domainLastActivityTick: new Map(),
       })
     }
   }
@@ -213,7 +249,10 @@ export class TrustEngine {
     }
 
     const baseDelta = this.getBaseDelta(outcome)
-    const effectiveDelta = this.applyDiminishingReturns(state.score, baseDelta)
+    const riskAdjustedDelta = this.config.riskWeightingEnabled && context?.blastRadius
+      ? this.applyRiskWeighting(baseDelta, context.blastRadius)
+      : baseDelta
+    const effectiveDelta = this.applyDiminishingReturns(state.score, riskAdjustedDelta)
 
     if (this.config.calibrationMode) {
       const wouldBeScore = this.clamp(state.score + effectiveDelta)
@@ -234,6 +273,7 @@ export class TrustEngine {
     state.score = this.clamp(state.score + effectiveDelta)
     state.lastActivityTick = currentTick
     state.decayAccumulator = 0
+    this.updateDomainScores(state, riskAdjustedDelta, currentTick, context)
     this.recordDomainOutcome(agentId, outcome, state.score - previousScore, currentTick, context)
 
     return state.score - previousScore
@@ -256,9 +296,44 @@ export class TrustEngine {
     this.calibrationLog.length = 0
   }
 
+  /** Get all domain scores for an agent. Returns empty map if agent not registered or no domain outcomes yet. */
+  getDomainScores(agentId: string): Map<ArtifactKind, number> {
+    const state = this.agents.get(agentId)
+    if (!state) return new Map()
+    return new Map(state.domainScores)
+  }
+
+  /** Get a single domain score for an agent. Returns undefined if agent not registered or domain not tracked. */
+  getDomainScore(agentId: string, kind: ArtifactKind): number | undefined {
+    return this.agents.get(agentId)?.domainScores.get(kind)
+  }
+
+  /** Get all domain scores for all agents. */
+  getAllDomainScores(): Array<{ agentId: string; domainScores: Record<ArtifactKind, number> }> {
+    const result: Array<{ agentId: string; domainScores: Record<ArtifactKind, number> }> = []
+    for (const [agentId, state] of this.agents) {
+      if (state.domainScores.size > 0) {
+        const domainScores = Object.fromEntries(state.domainScores) as Record<ArtifactKind, number>
+        result.push({ agentId, domainScores })
+      }
+    }
+    return result
+  }
+
   /** Look up the base delta for an outcome, honoring config overrides. */
   private getBaseDelta(outcome: TrustOutcome): number {
     return this.config.deltaTable[outcome] ?? DEFAULT_DELTA_TABLE[outcome]
+  }
+
+  /**
+   * Apply risk weighting to a trust delta based on blast radius.
+   * Only positive deltas (trust gains) are weighted — negative deltas pass through unchanged
+   * to prevent reducing trust-loss severity for high-risk actions.
+   */
+  applyRiskWeighting(baseDelta: number, blastRadius: string): number {
+    if (baseDelta <= 0) return baseDelta
+    const weight = this.config.riskWeightMap[blastRadius] ?? this.config.riskWeightMap['unknown'] ?? 1.0
+    return Math.floor(baseDelta * weight)
   }
 
   /**
@@ -295,19 +370,72 @@ export class TrustEngine {
    */
   private onTick(tick: number): void {
     for (const [, state] of this.agents) {
+      // Global score decay
       if (state.lastActivityTick < tick) {
         state.decayAccumulator += this.config.decayRatePerTick
 
         if (state.decayAccumulator >= 1) {
           state.decayAccumulator -= 1
 
-          if (state.score > this.config.decayTargetScore) {
-            state.score = Math.max(this.config.decayTargetScore, state.score - 1)
-          } else if (state.score < this.config.decayTargetScore) {
-            state.score = Math.min(this.config.decayTargetScore, state.score + 1)
+          // When agent has been idle long enough, use the lower of decayTarget and decayCeiling
+          // as the convergence point so the agent decays past baseline down to the ceiling.
+          const idleTicks = tick - state.lastActivityTick
+          const effectiveTarget = idleTicks > this.config.inactivityThresholdTicks
+            ? Math.max(this.config.floorScore, Math.min(this.config.decayTargetScore, this.config.decayCeiling))
+            : this.config.decayTargetScore
+
+          if (state.score > effectiveTarget) {
+            state.score = Math.max(effectiveTarget, state.score - 1)
+          } else if (state.score < effectiveTarget) {
+            state.score = Math.min(effectiveTarget, state.score + 1)
           }
         }
       }
+
+      // Per-domain score decay (same rate, independent per domain)
+      for (const [kind, domainScore] of state.domainScores) {
+        const domainLastActivity = state.domainLastActivityTick.get(kind) ?? 0
+        if (domainLastActivity < tick) {
+          const acc = (state.domainDecayAccumulators.get(kind) ?? 0) + this.config.decayRatePerTick
+          state.domainDecayAccumulators.set(kind, acc)
+
+          if (acc >= 1) {
+            state.domainDecayAccumulators.set(kind, acc - 1)
+            const target = this.config.decayTargetScore
+
+            if (domainScore > target) {
+              state.domainScores.set(kind, Math.max(target, domainScore - 1))
+            } else if (domainScore < target) {
+              state.domainScores.set(kind, Math.min(target, domainScore + 1))
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /** Update per-domain scores when context includes artifactKinds. Takes the pre-diminished delta so each domain applies its own diminishing returns. */
+  private updateDomainScores(
+    state: AgentTrustState,
+    riskAdjustedDelta: number,
+    currentTick: number,
+    context?: TrustOutcomeContext
+  ): void {
+    if (!context?.artifactKinds?.length) return
+
+    for (const kind of context.artifactKinds) {
+      // Lazy initialization: create domain score on first outcome
+      if (!state.domainScores.has(kind)) {
+        state.domainScores.set(kind, this.config.initialScore)
+        state.domainDecayAccumulators.set(kind, 0)
+        state.domainLastActivityTick.set(kind, currentTick)
+      }
+
+      const current = state.domainScores.get(kind)!
+      const domainDelta = this.applyDiminishingReturns(current, riskAdjustedDelta)
+      state.domainScores.set(kind, this.clamp(current + domainDelta))
+      state.domainDecayAccumulators.set(kind, 0)
+      state.domainLastActivityTick.set(kind, currentTick)
     }
   }
 

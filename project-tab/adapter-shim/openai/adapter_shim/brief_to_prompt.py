@@ -5,9 +5,14 @@ from __future__ import annotations
 from .models import AgentBrief
 
 
-def brief_to_prompt(brief: AgentBrief) -> str:
+def brief_to_prompt(brief: AgentBrief, *, continuation: bool = False) -> str:
     """Render an AgentBrief as a structured prompt string for codex exec."""
     sections: list[str] = []
+
+    if continuation:
+        sections.append(
+            "Your previous assignment is complete. Here is your next assignment:\n"
+        )
 
     sections.append(f'You are a {brief.role} working on the "{brief.workstream}" workstream.')
     sections.append(brief.description)

@@ -1,6 +1,7 @@
 import { Router } from 'express'
 
 import {
+  assignAgentRequestSchema,
   killAgentRequestSchema,
   pauseAgentRequestSchema,
   resumeAgentRequestSchema,
@@ -8,6 +9,7 @@ import {
   submitCheckpointRequestSchema,
   updateAgentBriefRequestSchema
 } from '../validation/schemas'
+import { clearIdleTracking } from '../event-handlers'
 import { parseBody } from './utils'
 import type { ApiRouteDeps } from './index'
 import type { AgentBrief, SerializedAgentState } from '../types'
@@ -203,6 +205,54 @@ export function createAgentsRouter(deps: AgentsDeps): Router {
       res.status(200).json({ updated: true, agentId: handle.id })
     }).catch((err: Error) => {
       res.status(500).json({ error: 'Brief update failed', message: err.message })
+    })
+  })
+
+  // Assign new work to an idle agent (resume with new brief, preserve trust)
+  router.post('/:id/assign', (req, res) => {
+    const body = parseBody(req, res, assignAgentRequestSchema)
+    if (!body) {
+      return
+    }
+
+    const handle = deps.registry.getHandle(req.params.id)
+    if (!handle) {
+      res.status(404).json({ error: 'Agent not found' })
+      return
+    }
+
+    if (handle.status !== 'idle') {
+      res.status(409).json({ error: 'Agent is not idle', currentStatus: handle.status })
+      return
+    }
+
+    const plugin = deps.gateway.getPlugin(handle.pluginName)
+    if (!plugin) {
+      res.status(500).json({ error: 'Plugin not found', pluginName: handle.pluginName })
+      return
+    }
+
+    const checkpoint = deps.checkpointStore.getLatestCheckpoint(handle.id)
+    if (!checkpoint) {
+      res.status(409).json({ error: 'No checkpoint to resume from' })
+      return
+    }
+
+    // Merge new brief into checkpoint state for resume
+    const resumeState: SerializedAgentState = {
+      ...checkpoint.state,
+      briefSnapshot: body.brief,
+    }
+
+    plugin.resume(resumeState).then((newHandle) => {
+      deps.registry.updateHandle(handle.id, { status: 'running' })
+      deps.knowledgeStore.updateAgentStatus(handle.id, 'running')
+      clearIdleTracking(handle.id)
+      deps.contextInjection?.updateAgentBrief(handle.id, body.brief)
+
+      res.status(200).json({ assigned: true, agentId: handle.id })
+    }).catch((err: Error) => {
+      res.status(500).json({ error: 'Assign failed', message: err.message })
     })
   })
 

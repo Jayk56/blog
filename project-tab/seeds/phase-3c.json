@@ -1,0 +1,181 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "title": "Phase 3C: Learning, Adaptation & Self-Improvement",
+    "description": "Close the feedback loops — the system learns from its own operation and adapts. Tier 1 analyzes recorded feedback data (overrides, injections, domain trust). Tier 2 adds system-level reflection via agent tasks (retrospectives, constraint inference, rework analysis). Tier 3 hardens trust scoring and coherence thresholds.",
+    "goals": [
+      "Override pattern analysis surfaces actionable insights in Controls workspace",
+      "False positive auto-tuning adjusts Layer 1 coherence thresholds based on Layer 2 confirmation rates",
+      "Trust hardening prevents gaming via decay ceiling and risk-weighted deltas",
+      "Domain-specific trust scores enable per-artifact-kind escalation rules",
+      "Calibration profiles (Conservative/Balanced/Permissive) ship with a UI selector",
+      "Context injection frequency self-tunes based on observed relevance",
+      "Phase retrospectives generate rich summaries at checkpoint boundaries",
+      "Constraint inference suggests brief improvements from observed patterns",
+      "Control mode ROI measurement informs data-driven mode recommendations",
+      "Rework causal linking traces artifact churn to upstream causes",
+      "All 1058+ existing tests still passing, zero TS errors"
+    ],
+    "checkpoints": [
+      "Wave 1 complete: override patterns, FP auto-tuning, trust hardening all passing tests",
+      "Wave 2 complete: injection optimization, domain trust, calibration profiles integrated",
+      "Wave 3 complete: retrospectives, constraint inference, control mode ROI generating output",
+      "Wave 4 complete: rework causal linking traces full cause chains",
+      "All Vitest tests passing, zero TypeScript errors, frontend builds clean"
+    ],
+    "constraints": [
+      "TypeScript strict mode — no implicit any, strict null checks",
+      "ESM module system (import/export, no require)",
+      "Must pass existing 1058+ tests before merging any deliverable",
+      "Don't modify files outside assigned workstream without escalating",
+      "Extend existing patterns: DI via AppDeps, Zod validation, event bus subscriptions",
+      "Tier 1 and Tier 3 are server-side computation — no LLM calls",
+      "Tier 2 analytical tasks (3C-4, 3C-5, 3C-6 interpretation, 3C-7) are agent tasks, not bare LLM calls",
+      "New types go in server/src/types/, new services in server/src/intelligence/",
+      "All new endpoints need Zod request validation via parseBody pattern",
+      "Frontend components follow existing dark theme with indigo accent tokens"
+    ]
+  },
+  "workstreams": [
+    {
+      "id": "3c-1-override-patterns",
+      "name": "Override Pattern Analysis",
+      "description": "Analyze TrustOutcomeRecord data from 3A-8a to identify clustering in human overrides — by workstream, artifact kind, tool category, agent, and temporal patterns. Produces OverridePatternReport surfaced in Controls workspace Insights panel.",
+      "keyFiles": [
+        "server/src/intelligence/trust-engine.ts",
+        "server/src/intelligence/knowledge-store.ts",
+        "server/src/routes/trust.ts"
+      ],
+      "status": "active",
+      "dependencies": []
+    },
+    {
+      "id": "3c-2-injection-optimization",
+      "name": "Context Injection Optimization",
+      "description": "Analyze InjectionRecord data from 3A-8b to measure injection utility — overlap between artifacts included vs referenced. Produce InjectionEfficiencyReport with per-mode policy tuning recommendations. Optionally self-tune injection frequency.",
+      "keyFiles": [
+        "server/src/intelligence/context-injection-service.ts",
+        "server/src/intelligence/knowledge-store.ts"
+      ],
+      "status": "active",
+      "dependencies": ["3c-1-override-patterns"]
+    },
+    {
+      "id": "3c-3-domain-trust",
+      "name": "Domain-Specific Trust",
+      "description": "Extend TrustEngine with per-domain scores (Map<ArtifactKind, number> per agent). Domain scores decay independently. Add domainTrustThreshold to EscalationPredicate. Wire scoreByDomain in TrustTrajectories frontend component.",
+      "keyFiles": [
+        "server/src/intelligence/trust-engine.ts",
+        "server/src/types/events.ts",
+        "server/src/validation/schemas.ts",
+        "src/components/controls/TrustTrajectories.tsx"
+      ],
+      "status": "active",
+      "dependencies": ["3c-1-override-patterns"]
+    },
+    {
+      "id": "3c-4-phase-retrospectives",
+      "name": "Phase Retrospectives",
+      "description": "Spawn a retrospective agent at checkpoint boundaries to explore audit logs, decision history, trust trajectories, and coherence events. Agent produces PhaseRetrospective with summary, key metrics comparison, top insights, and suggested adjustments. Surface in Briefing workspace.",
+      "keyFiles": [
+        "server/src/intelligence/knowledge-store.ts",
+        "server/src/intelligence/briefing-service.ts",
+        "server/src/routes/project.ts",
+        "src/components/briefing/BriefingWorkspace.tsx"
+      ],
+      "status": "active",
+      "dependencies": ["3c-2-injection-optimization", "3c-3-domain-trust"]
+    },
+    {
+      "id": "3c-5-constraint-inference",
+      "name": "Constraint Inference",
+      "description": "Agent task spawned at phase boundaries to analyze override patterns and coherence history, then suggest new brief constraints. Produces ConstraintSuggestion proposals surfaced in Brief Editor as 'Suggested constraints'. Human approves/dismisses — dismissals tracked as feedback.",
+      "keyFiles": [
+        "server/src/intelligence/knowledge-store.ts",
+        "server/src/routes/project.ts",
+        "src/components/brief-editor/ConstraintsSection.tsx"
+      ],
+      "status": "active",
+      "dependencies": ["3c-1-override-patterns"]
+    },
+    {
+      "id": "3c-6-control-mode-roi",
+      "name": "Control Mode ROI Measurement",
+      "description": "Compute decision queue latency, override rate, coherence issue rate, task completion rate, and cost per control mode. Server-side aggregation for signals, agent task for interpretation and recommendation generation. Produces ControlModeROI report.",
+      "keyFiles": [
+        "server/src/intelligence/decision-queue.ts",
+        "server/src/intelligence/trust-engine.ts",
+        "server/src/intelligence/knowledge-store.ts"
+      ],
+      "status": "active",
+      "dependencies": ["3c-4-phase-retrospectives", "3c-5-constraint-inference"]
+    },
+    {
+      "id": "3c-7-rework-causal-linking",
+      "name": "Rework Causal Linking",
+      "description": "Agent task that traces artifact updates to upstream causes: coherence issues, human overrides, dependency cascades, or voluntary improvement. Produces ReworkCausalReport per artifact and aggregate stats. Surface rework annotations on Map workspace artifact nodes.",
+      "keyFiles": [
+        "server/src/intelligence/knowledge-store.ts",
+        "server/src/intelligence/coherence-monitor.ts",
+        "src/components/map/MapWorkspace.tsx"
+      ],
+      "status": "active",
+      "dependencies": ["3c-6-control-mode-roi"]
+    },
+    {
+      "id": "3c-8-fp-auto-tuning",
+      "name": "False Positive Auto-Tuning",
+      "description": "Layer 2 confirmation/dismissal results feed back into Layer 1 threshold adjustment. Track confirmation rate per 24-hour window. Adjust layer1PromotionThreshold: >50% FP → increase by 0.02, <10% FP → decrease by 0.01. Clamp to [0.75, 0.95], require 20+ reviews. CoherenceFeedbackLoopConfig already typed.",
+      "keyFiles": [
+        "server/src/intelligence/coherence-monitor.ts",
+        "server/src/intelligence/knowledge-store.ts"
+      ],
+      "status": "active",
+      "dependencies": []
+    },
+    {
+      "id": "3c-9-trust-hardening",
+      "name": "Trust Hardening",
+      "description": "Two anti-gaming fixes: (a) decayCeiling config — inactive agents decay toward baseline but never above ceiling (default 50). (b) Risk-weighted deltas — effectiveDelta = baseDelta * riskWeight(toolCategory) where riskWeight derived from blast radius. Prevents trust-farming through trivial approvals.",
+      "keyFiles": [
+        "server/src/intelligence/trust-engine.ts",
+        "server/src/validation/schemas.ts"
+      ],
+      "status": "active",
+      "dependencies": []
+    },
+    {
+      "id": "3c-10-calibration-profiles",
+      "name": "Trust Calibration Profiles",
+      "description": "Pre-built calibration profiles for different project risk levels: Conservative (slow gain +1, fast loss -4, low ceiling 30), Balanced (current defaults), Permissive (fast gain +4, slow loss -1, high autonomy). Per-project profile storage and UI selector in Controls workspace.",
+      "keyFiles": [
+        "server/src/intelligence/trust-engine.ts",
+        "server/src/routes/trust.ts",
+        "src/components/controls/ControlsWorkspace.tsx"
+      ],
+      "status": "active",
+      "dependencies": ["3c-9-trust-hardening"]
+    }
+  ],
+  "repoRoot": "/Users/jayk/Code/blog/project-tab",
+  "defaultTools": ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+  "defaultConstraints": [
+    "TypeScript strict mode — no implicit any, strict null checks",
+    "ESM module system (import/export, no require)",
+    "Must pass existing tests before merging",
+    "Don't modify files outside assigned workstream without escalating"
+  ],
+  "defaultEscalation": {
+    "alwaysEscalate": [
+      "Deleting files",
+      "Modifying public API signatures",
+      "Changing event bus message shapes",
+      "Modifying trust scoring formulas"
+    ],
+    "neverEscalate": [
+      "Read",
+      "Glob",
+      "Grep"
+    ]
+  }
+}

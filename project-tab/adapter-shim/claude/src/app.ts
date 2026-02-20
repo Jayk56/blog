@@ -33,6 +33,8 @@ export interface AppState {
   eventBuffer: AdapterEvent[]
   wsConnected: boolean
   startTime: number
+  /** Last brief used for spawn/resume, used to detect continuation on assign. */
+  lastBrief: AgentBrief | null
 }
 
 export function createApp(options: { mock?: boolean; workspace?: string } = {}): express.Express {
@@ -46,6 +48,7 @@ export function createApp(options: { mock?: boolean; workspace?: string } = {}):
     eventBuffer: [],
     wsConnected: false,
     startTime: Date.now(),
+    lastBrief: null,
   }
 
   // Store state on app for access from WS setup
@@ -96,6 +99,7 @@ export function createApp(options: { mock?: boolean; workspace?: string } = {}):
       })
     }
     state.runner = runner
+    state.lastBrief = brief
     runner.start()
 
     // Give the runner a moment to emit initial events
@@ -135,20 +139,27 @@ export function createApp(options: { mock?: boolean; workspace?: string } = {}):
     const agentState: SerializedAgentState = req.body
     const brief = agentState.briefSnapshot
 
+    // Detect if this is a continuation (assign-on-idle) by comparing brief identity
+    const isContinuation = state.lastBrief !== null &&
+      (brief.workstream !== state.lastBrief.workstream ||
+       brief.description !== state.lastBrief.description)
+
     const enableDecisionGating = brief.controlMode !== 'ecosystem'
 
     let runner: MockRunner | ClaudeRunner
     if (state.mock) {
-      runner = new MockRunner(brief)
+      runner = new MockRunner(brief, { continuation: isContinuation })
     } else {
       const resumeSessionId = agentState.checkpoint?.sessionId ?? agentState.sessionId
       runner = new ClaudeRunner(brief, {
         workspace: state.workspace,
         resumeSessionId,
         enableDecisionGating,
+        continuation: isContinuation,
       })
     }
     state.runner = runner
+    state.lastBrief = brief
     runner.start()
 
     await new Promise(r => setTimeout(r, 50))

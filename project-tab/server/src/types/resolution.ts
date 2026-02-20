@@ -16,6 +16,8 @@ export interface ToolApprovalResolution {
   alwaysApprove?: boolean
   rationale?: string
   actionKind: ActionKind
+  /** True when the system auto-resolved this decision (e.g. ecosystem/adaptive mode). */
+  autoResolved?: boolean
 }
 
 /** Canonical resolution union used by backend APIs and plugin calls. */

@@ -13,7 +13,12 @@ export type { DecisionTimeoutPolicy, DecisionStatus, QueuedDecision } from './de
 export { KnowledgeStore } from './knowledge-store'
 
 export { CoherenceMonitor } from './coherence-monitor'
-export type { CoherenceMonitorConfig } from './coherence-monitor'
+export type {
+  CoherenceMonitorConfig,
+  CoherenceFeedbackLoopConfig,
+  ThresholdAdjustmentRecord,
+  FeedbackLoopStatus,
+} from './coherence-monitor'
 
 export type { EmbeddingService } from './embedding-service'
 export { VoyageEmbeddingService } from './voyage-embedding-service'
@@ -31,3 +36,12 @@ export type {
 
 export { LlmReviewService } from './llm-review-service'
 export type { LlmReviewConfig } from './llm-review-service'
+
+export { InjectionOptimizer } from './injection-optimizer'
+export type { InjectionEfficiencyReport, ReasonBreakdown, ModeRecommendation } from './injection-optimizer'
+
+export { ContextInjectionService } from './context-injection-service'
+export type { InjectionRecord, SelfTuningConfig } from './context-injection-service'
+
+export { ConstraintInferenceService } from './constraint-inference-service'
+export type { ConstraintSuggestion, SuggestionConfidence, SuggestionSource, ConstraintInferenceStore } from './constraint-inference-service'

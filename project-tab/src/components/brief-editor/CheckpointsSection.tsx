@@ -18,6 +18,8 @@ export default function CheckpointsSection({ checkpoints }: CheckpointsSectionPr
   const isHistorical = state.viewingTick !== null
 
   function handleToggle(checkpointId: string, enabled: boolean) {
+    // Toggle is local UI state only. The backend's checkpoints field is the
+    // catalog of all checkpoints; enabled/disabled is a frontend concern.
     dispatch({ type: 'toggle-checkpoint', checkpointId, enabled })
   }
 

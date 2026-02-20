@@ -27,12 +27,24 @@ type ClassificationDeps = Pick<EventHandlerDeps, 'knowledgeStore' | 'classifier'
 type DecisionDeps = Pick<EventHandlerDeps, 'decisionQueue' | 'tickService' | 'registry' | 'gateway' | 'checkpointStore'>
 type ArtifactDeps = Pick<EventHandlerDeps, 'knowledgeStore' | 'coherenceMonitor' | 'classifier' | 'wsHub'>
 type LifecycleDeps = Pick<EventHandlerDeps, 'knowledgeStore' | 'registry'>
-type CompletionDeps = Pick<EventHandlerDeps, 'trustEngine' | 'tickService' | 'wsHub' | 'knowledgeStore'>
+type CompletionDeps = Pick<EventHandlerDeps, 'trustEngine' | 'tickService' | 'wsHub' | 'knowledgeStore' | 'registry' | 'gateway' | 'checkpointStore'>
 type ErrorDeps = Pick<EventHandlerDeps, 'trustEngine' | 'tickService' | 'wsHub' | 'knowledgeStore'>
+
+/** Default number of ticks an agent may remain idle before auto-kill. */
+export const DEFAULT_IDLE_TIMEOUT_TICKS = 500
+
+/** Module-level idle entry tracking. Exposed for assign route to clear on reassignment. */
+const _idleEntryTicks = new Map<string, number>()
+
+/** Clear idle tracking for an agent (called when agent is assigned new work). */
+export function clearIdleTracking(agentId: string): void {
+  _idleEntryTicks.delete(agentId)
+}
 
 export function wireEventHandlers(deps: EventHandlerDeps): void {
   const persistedIssueIds = new Set<string>()
   let coherenceRunInFlight = false
+  const idleEntryTick = _idleEntryTicks
 
   const publishCoherenceIssue = (issue: import('./types/events').CoherenceEvent, runId: string): void => {
     if (persistedIssueIds.has(issue.issueId)) return
@@ -121,6 +133,15 @@ export function wireEventHandlers(deps: EventHandlerDeps): void {
 
   deps.eventBus.subscribe({ eventType: 'completion' }, (envelope) => {
     handleCompletionTrustTracking(envelope, deps)
+    // Track when agents enter idle state for timeout cleanup
+    if (envelope.event.type === 'completion') {
+      const outcome = envelope.event.outcome
+      if (outcome === 'success' || outcome === 'partial') {
+        idleEntryTick.set(envelope.event.agentId, deps.tickService.currentTick())
+      } else {
+        idleEntryTick.delete(envelope.event.agentId)
+      }
+    }
   })
 
   deps.eventBus.subscribe({ eventType: 'error' }, (envelope) => {
@@ -129,6 +150,24 @@ export function wireEventHandlers(deps: EventHandlerDeps): void {
 
   deps.tickService.onTick((tick) => {
     void runCoherencePipeline(tick, 'system')
+
+    // Auto-kill idle agents that haven't been assigned new work within the timeout
+    for (const [agentId, entryTick] of idleEntryTick) {
+      if (tick - entryTick >= DEFAULT_IDLE_TIMEOUT_TICKS) {
+        const handle = deps.registry.getHandle(agentId)
+        if (handle && handle.status === 'idle') {
+          const plugin = deps.gateway.getPlugin(handle.pluginName)
+          if (plugin) {
+            plugin.kill(handle, { grace: true }).catch(() => { /* best effort */ })
+          }
+          deps.registry.removeHandle(agentId)
+          deps.knowledgeStore.removeAgent(agentId)
+          // eslint-disable-next-line no-console
+          console.log(`[idle-timeout] auto-killed idle agent ${agentId} after ${DEFAULT_IDLE_TIMEOUT_TICKS} ticks`)
+        }
+        idleEntryTick.delete(agentId)
+      }
+    }
   })
 }
 
@@ -261,6 +300,31 @@ export function handleCompletionTrustTracking(envelope: EventEnvelope, deps: Com
       delta: newScore - previousScore,
       reason: trustOutcome,
     })
+  }
+
+  // Transition to idle on success/partial; completed (terminal) on abandoned/max_turns
+  const outcome = envelope.event.outcome
+  if (outcome === 'success' || outcome === 'partial') {
+    deps.registry.updateHandle(agentId, { status: 'idle' })
+    deps.knowledgeStore.updateAgentStatus(agentId, 'idle')
+
+    // Auto-checkpoint so we have session state for later resume
+    const handle = deps.registry.getHandle(agentId)
+    if (handle) {
+      const plugin = deps.gateway.getPlugin(handle.pluginName)
+      if (plugin) {
+        plugin.requestCheckpoint(handle, `completion-${agentId}`)
+          .then(state => {
+            // Tag as idle_completion so checkpoint store knows the provenance
+            state.serializedBy = 'idle_completion'
+            deps.checkpointStore.storeCheckpoint(state, `completion-${agentId}`)
+          })
+          .catch(() => { /* best effort */ })
+      }
+    }
+  } else {
+    deps.registry.updateHandle(agentId, { status: 'completed' })
+    deps.knowledgeStore.updateAgentStatus(agentId, 'completed')
   }
 }
 

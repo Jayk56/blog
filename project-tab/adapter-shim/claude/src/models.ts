@@ -9,7 +9,7 @@ export type Severity = 'warning' | 'low' | 'medium' | 'high' | 'critical'
 export type BlastRadius = 'trivial' | 'small' | 'medium' | 'large' | 'unknown'
 export type ControlMode = 'orchestrator' | 'adaptive' | 'ecosystem'
 export type ArtifactKind = 'code' | 'document' | 'design' | 'config' | 'test' | 'other'
-export type AgentStatus = 'running' | 'paused' | 'waiting_on_human' | 'completed' | 'error'
+export type AgentStatus = 'running' | 'paused' | 'waiting_on_human' | 'completed' | 'idle' | 'error'
 export type HealthStatus = 'healthy' | 'degraded' | 'unhealthy'
 export type ActionKind = 'create' | 'update' | 'delete' | 'review' | 'deploy'
 
@@ -122,7 +122,7 @@ export interface SerializedAgentState {
   pendingDecisionIds: string[]
   lastSequence: number
   serializedAt: string
-  serializedBy: 'pause' | 'kill_grace' | 'crash_recovery'
+  serializedBy: 'pause' | 'kill_grace' | 'crash_recovery' | 'decision_checkpoint' | 'idle_completion'
   estimatedSizeBytes: number
 }
 

@@ -42,13 +42,14 @@ export class ClaudeRunner {
   private _workspace: string | undefined
   private _resumeSessionId: string | undefined
   private _enableDecisionGating: boolean
+  private _continuation: boolean
   private _settingsBackup: string | null = null
   private _settingsPath: string | null = null
   private _sandboxDir: string | null = null
 
   constructor(
     brief: AgentBrief,
-    options?: { workspace?: string; resumeSessionId?: string; enableDecisionGating?: boolean }
+    options?: { workspace?: string; resumeSessionId?: string; enableDecisionGating?: boolean; continuation?: boolean }
   ) {
     this.brief = brief
     this.agentId = brief.agentId
@@ -56,6 +57,7 @@ export class ClaudeRunner {
     this._workspace = options?.workspace
     this._resumeSessionId = options?.resumeSessionId
     this._enableDecisionGating = options?.enableDecisionGating ?? true
+    this._continuation = options?.continuation ?? false
     this._factory = new EventFactory(uuidv4())
     this._mapper = new ClaudeEventMapper(this.agentId, brief.workstream)
     this._handle = {
@@ -176,7 +178,7 @@ export class ClaudeRunner {
   }
 
   private _spawnAndRead(): void {
-    let prompt = briefToPrompt(this.brief)
+    let prompt = briefToPrompt(this.brief, { continuation: this._continuation })
 
     // When running in a sandbox, prepend the real workspace path so the agent
     // uses absolute paths to access project files.

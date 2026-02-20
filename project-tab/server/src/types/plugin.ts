@@ -28,7 +28,7 @@ export interface SerializedAgentState {
   pendingDecisionIds: string[]
   lastSequence: number
   serializedAt: string
-  serializedBy: 'pause' | 'kill_grace' | 'crash_recovery' | 'decision_checkpoint'
+  serializedBy: 'pause' | 'kill_grace' | 'crash_recovery' | 'decision_checkpoint' | 'idle_completion'
   estimatedSizeBytes: number
 }
 
@@ -49,7 +49,7 @@ export interface KillResponse {
 export interface AgentHandle {
   id: string
   pluginName: string
-  status: 'running' | 'paused' | 'waiting_on_human' | 'completed' | 'error'
+  status: 'running' | 'paused' | 'waiting_on_human' | 'completed' | 'idle' | 'error'
   sessionId: string
   pendingBriefChanges?: Partial<AgentBrief>
 }

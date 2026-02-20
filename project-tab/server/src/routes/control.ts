@@ -6,7 +6,7 @@ import type { ApiRouteDeps } from './index'
 
 type ControlModeDeps = Pick<
   ApiRouteDeps,
-  'controlMode' | 'wsHub' | 'registry' | 'trustEngine' | 'knowledgeStore'
+  'controlMode' | 'wsHub' | 'registry' | 'trustEngine' | 'knowledgeStore' | 'gateway'
 >
 
 /**
@@ -26,13 +26,27 @@ export function createControlModeRouter(deps: ControlModeDeps): Router {
     }
 
     deps.controlMode.setMode(body.controlMode)
+
+    // Propagate control mode to all running agents so their decision gating updates
+    const activeAgents = deps.registry.listHandles()
+    for (const handle of activeAgents) {
+      const plugin = deps.gateway.getPlugin(handle.pluginName)
+      if (plugin) {
+        plugin.updateBrief(handle, { controlMode: body.controlMode }).catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err)
+          // eslint-disable-next-line no-console
+          console.error(`[control-mode] failed to update brief for agent ${handle.id}: ${msg}`)
+        })
+      }
+    }
+
     const snapshot = await deps.knowledgeStore.getSnapshot()
 
     // Broadcast state sync to frontend with updated control mode
     deps.wsHub.broadcast({
       type: 'state_sync',
       snapshot,
-      activeAgents: deps.registry.listHandles(),
+      activeAgents,
       trustScores: deps.trustEngine.getAllScores(),
       controlMode: body.controlMode
     })

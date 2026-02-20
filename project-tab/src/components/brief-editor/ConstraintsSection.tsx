@@ -4,14 +4,24 @@
  * Lists active project constraints with the ability to add, edit, and remove.
  * Constraints are injected into agent context -- they're the "specification
  * of intent" that replaces process standardization.
+ *
+ * Also displays data-driven constraint suggestions inferred from audit log
+ * patterns, which the human can accept or dismiss.
  */
 
 import { useState, useRef, useEffect } from 'react'
-import { Plus, Pencil, Check, X, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Check, X, Trash2, Lightbulb } from 'lucide-react'
 import { useProjectDispatch, useProjectState, useApi } from '../../lib/context.js'
+import type { ConstraintSuggestionResponse } from '../../services/api-client.js'
 
 interface ConstraintsSectionProps {
   constraints: string[]
+}
+
+const confidenceBadge: Record<string, { label: string; className: string }> = {
+  high: { label: 'High', className: 'bg-success/20 text-success' },
+  medium: { label: 'Med', className: 'bg-warning/20 text-warning' },
+  low: { label: 'Low', className: 'bg-text-muted/20 text-text-muted' },
 }
 
 export default function ConstraintsSection({ constraints }: ConstraintsSectionProps) {
@@ -27,12 +37,26 @@ export default function ConstraintsSection({ constraints }: ConstraintsSectionPr
   const [editDraft, setEditDraft] = useState('')
   const editInputRef = useRef<HTMLInputElement>(null)
 
+  // ── Suggestion state ───────────────────────────────────────────
+  const [suggestions, setSuggestions] = useState<ConstraintSuggestionResponse[]>([])
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false)
+
   useEffect(() => {
     if (editingIndex !== null && editInputRef.current) {
       editInputRef.current.focus()
       editInputRef.current.select()
     }
   }, [editingIndex])
+
+  // Fetch suggestions on mount
+  useEffect(() => {
+    if (!api || isHistorical) return
+    setSuggestionsLoading(true)
+    api.suggestConstraints()
+      .then(setSuggestions)
+      .catch(() => setSuggestions([]))
+      .finally(() => setSuggestionsLoading(false))
+  }, [api, isHistorical])
 
   function handleAdd() {
     const trimmed = newConstraint.trim()
@@ -81,6 +105,18 @@ export default function ConstraintsSection({ constraints }: ConstraintsSectionPr
         setEditingIndex(editingIndex - 1)
       }
     }
+  }
+
+  function acceptSuggestion(suggestion: ConstraintSuggestionResponse) {
+    dispatch({ type: 'inject-context', context: suggestion.text })
+    api?.updateProject({ constraints: [...constraints, suggestion.text] }).catch(console.error)
+    api?.submitConstraintFeedback(suggestion.id, true, suggestion.text).catch(console.error)
+    setSuggestions(prev => prev.filter(s => s.id !== suggestion.id))
+  }
+
+  function dismissSuggestion(suggestion: ConstraintSuggestionResponse) {
+    api?.submitConstraintFeedback(suggestion.id, false).catch(console.error)
+    setSuggestions(prev => prev.filter(s => s.id !== suggestion.id))
   }
 
   return (
@@ -194,6 +230,59 @@ export default function ConstraintsSection({ constraints }: ConstraintsSectionPr
             Cancel
           </button>
         </div>
+      )}
+
+      {/* ── Suggested Constraints ────────────────────────────────── */}
+      {!isHistorical && suggestions.length > 0 && (
+        <div className="space-y-2 pt-2 border-t border-border">
+          <div className="flex items-center gap-1.5">
+            <Lightbulb size={12} className="text-warning" />
+            <span className="text-xs font-medium text-text-muted uppercase tracking-wider">
+              Suggested constraints
+            </span>
+          </div>
+
+          {suggestions.map((suggestion) => {
+            const badge = confidenceBadge[suggestion.confidence]
+            return (
+              <div
+                key={suggestion.id}
+                className="p-3 rounded-lg bg-surface-1 border border-border/60 border-dashed text-sm space-y-2"
+              >
+                <div className="flex items-start gap-2">
+                  <span className="text-accent flex-shrink-0 mt-0.5">?</span>
+                  <div className="flex-1 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-text-primary">{suggestion.text}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${badge.className}`}>
+                        {badge.label}
+                      </span>
+                    </div>
+                    <p className="text-xs text-text-muted">{suggestion.reasoning}</p>
+                  </div>
+                </div>
+                <div className="flex gap-2 pl-5">
+                  <button
+                    onClick={() => acceptSuggestion(suggestion)}
+                    className="px-2.5 py-1 text-xs bg-accent text-white rounded hover:bg-accent-muted transition-colors"
+                  >
+                    Accept
+                  </button>
+                  <button
+                    onClick={() => dismissSuggestion(suggestion)}
+                    className="px-2.5 py-1 text-xs text-text-muted hover:text-text-secondary transition-colors"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {!isHistorical && suggestionsLoading && (
+        <p className="text-xs text-text-muted">Loading suggestions...</p>
       )}
     </section>
   )

@@ -18,6 +18,7 @@ function createTestApp(controlModeValue: ControlMode = 'orchestrator') {
     decisionQueue,
     trustEngine: {} as any,
     controlMode,
+    registry: { listHandles: () => [] } as any,
   }))
   const server = createServer(app as any)
   let baseUrl = ''
