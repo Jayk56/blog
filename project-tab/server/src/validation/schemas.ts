@@ -152,7 +152,7 @@ export const guardrailEventSchema = z.object({
 export const lifecycleEventSchema = z.object({
   type: z.literal('lifecycle'),
   agentId: z.string(),
-  action: z.enum(['started', 'paused', 'resumed', 'killed', 'crashed', 'session_start', 'session_end']),
+  action: z.enum(['started', 'paused', 'resumed', 'killed', 'crashed', 'idle', 'session_start', 'session_end']),
   reason: z.string().optional()
 })
 

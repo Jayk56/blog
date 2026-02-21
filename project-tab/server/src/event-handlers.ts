@@ -25,7 +25,7 @@ export interface EventHandlerDeps {
 
 type ClassificationDeps = Pick<EventHandlerDeps, 'knowledgeStore' | 'classifier' | 'wsHub'>
 type DecisionDeps = Pick<EventHandlerDeps, 'decisionQueue' | 'tickService' | 'registry' | 'gateway' | 'checkpointStore'>
-type ArtifactDeps = Pick<EventHandlerDeps, 'knowledgeStore' | 'coherenceMonitor' | 'classifier' | 'wsHub'>
+type ArtifactDeps = Pick<EventHandlerDeps, 'knowledgeStore' | 'coherenceMonitor' | 'classifier' | 'wsHub' | 'tickService'>
 type LifecycleDeps = Pick<EventHandlerDeps, 'knowledgeStore' | 'registry'>
 type CompletionDeps = Pick<EventHandlerDeps, 'trustEngine' | 'tickService' | 'wsHub' | 'knowledgeStore' | 'registry' | 'gateway' | 'checkpointStore'>
 type ErrorDeps = Pick<EventHandlerDeps, 'trustEngine' | 'tickService' | 'wsHub' | 'knowledgeStore'>
@@ -50,7 +50,7 @@ export function wireEventHandlers(deps: EventHandlerDeps): void {
     if (persistedIssueIds.has(issue.issueId)) return
     persistedIssueIds.add(issue.issueId)
 
-    deps.knowledgeStore.storeCoherenceIssue(issue)
+    deps.knowledgeStore.storeCoherenceIssue(issue, deps.tickService.currentTick())
 
     const coherenceEnvelope: EventEnvelope = {
       sourceEventId: `coherence-${issue.issueId}`,
@@ -210,7 +210,8 @@ export function handleArtifactStorageAndCoherence(
 ): void {
   if (envelope.event.type !== 'artifact') return
 
-  deps.knowledgeStore.storeArtifact(envelope.event)
+  const tick = deps.tickService.currentTick()
+  deps.knowledgeStore.storeArtifact(envelope.event, tick)
 
   const issue = deps.coherenceMonitor.processArtifact(envelope.event)
   if (!issue) return
@@ -220,7 +221,7 @@ export function handleArtifactStorageAndCoherence(
     return
   }
 
-  deps.knowledgeStore.storeCoherenceIssue(issue)
+  deps.knowledgeStore.storeCoherenceIssue(issue, tick)
 
   const coherenceEnvelope: EventEnvelope = {
     sourceEventId: `coherence-${issue.issueId}`,

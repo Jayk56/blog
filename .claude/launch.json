@@ -1,0 +1,47 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "editor-frontend",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite"],
+      "port": 5173,
+      "cwd": "editor"
+    },
+    {
+      "name": "editor-server",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx", "watch", "server/index.ts"],
+      "port": 3000,
+      "cwd": "editor"
+    },
+    {
+      "name": "project-tab-frontend",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite"],
+      "port": 5173,
+      "cwd": "project-tab"
+    },
+    {
+      "name": "project-tab-server",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx", "src/index.ts"],
+      "port": 3001,
+      "cwd": "project-tab/server"
+    },
+    {
+      "name": "adapter-shim-openai",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "adapter_shim", "--port", "9100", "--mock"],
+      "port": 9100,
+      "cwd": "project-tab/adapter-shim/openai"
+    },
+    {
+      "name": "adapter-shim-claude",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx", "src/index.ts", "--port", "9100", "--mock"],
+      "port": 9100,
+      "cwd": "project-tab/adapter-shim/claude"
+    }
+  ]
+}

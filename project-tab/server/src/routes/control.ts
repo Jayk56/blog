@@ -6,7 +6,7 @@ import type { ApiRouteDeps } from './index'
 
 type ControlModeDeps = Pick<
   ApiRouteDeps,
-  'controlMode' | 'wsHub' | 'registry' | 'trustEngine' | 'knowledgeStore' | 'gateway'
+  'controlMode' | 'wsHub' | 'registry' | 'trustEngine' | 'knowledgeStore' | 'gateway' | 'tickService'
 >
 
 /**
@@ -25,7 +25,17 @@ export function createControlModeRouter(deps: ControlModeDeps): Router {
       return
     }
 
+    const previousMode = deps.controlMode.getMode()
     deps.controlMode.setMode(body.controlMode)
+
+    // Record mode transition for ROI attribution (schema: previousMode, newMode, tick)
+    deps.knowledgeStore.appendAuditLog?.(
+      'control_mode_change',
+      body.controlMode,
+      'set_mode',
+      undefined,
+      { previousMode, newMode: body.controlMode, tick: deps.tickService.currentTick() }
+    )
 
     // Propagate control mode to all running agents so their decision gating updates
     const activeAgents = deps.registry.listHandles()

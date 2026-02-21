@@ -17,8 +17,10 @@ import { LlmReviewService } from './intelligence/llm-review-service'
 import { ContextInjectionService } from './intelligence/context-injection-service'
 import { BriefingService } from './intelligence/briefing-service'
 import { ConstraintInferenceService } from './intelligence/constraint-inference-service'
+import { RetrospectiveService } from './intelligence/retrospective-service'
 import { ChildProcessManager } from './gateway/child-process-manager'
 import { LocalProcessPlugin } from './gateway/local-process-plugin'
+import { TeamsBridgePlugin } from './gateway/teams-bridge-plugin'
 import { AuthService } from './auth'
 import { TokenService } from './gateway/token-service'
 import type { AgentPlugin, KnowledgeSnapshot } from './types'
@@ -160,12 +162,18 @@ async function bootstrap(): Promise<void> {
   // Constraint inference service
   const constraintInference = new ConstraintInferenceService(knowledgeStoreImpl)
 
+  // Retrospective service
+  const retrospectiveService = new RetrospectiveService(knowledgeStoreImpl)
+
   const knowledgeStore: KnowledgeStore = {
     async getSnapshot(): Promise<KnowledgeSnapshot> {
       return knowledgeStoreImpl.getSnapshot(decisionQueue.listPending().map((q) => q.event))
     },
     async appendEvent(): Promise<void> {
       // Events are delivered via EventBus
+    },
+    updateAgentStatus(agentId, status) {
+      knowledgeStoreImpl.updateAgentStatus(agentId, status)
     },
     appendAuditLog(entityType, entityId, action, callerAgentId, details) {
       knowledgeStoreImpl.appendAuditLog(entityType, entityId, action, callerAgentId, details)
@@ -214,6 +222,12 @@ async function bootstrap(): Promise<void> {
   plugins.set('openai', openaiPlugin)
   // eslint-disable-next-line no-console
   console.log(`[plugin] registered "openai" (local process: ${shimCommand} ${shimArgs.join(' ')})`)
+
+  // Teams bridge plugin (always available for Agent Teams integration)
+  const bridgePlugin = new TeamsBridgePlugin()
+  plugins.set('teams-bridge', bridgePlugin)
+  // eslint-disable-next-line no-console
+  console.log('[plugin] registered "teams-bridge" (Agent Teams bridge)')
 
   // Docker container plugin (conditional)
   const { volumeRecovery, docker: dockerClient } = await wireDockerPlugin({
@@ -288,6 +302,8 @@ async function bootstrap(): Promise<void> {
     briefingService,
     coherenceMonitor,
     constraintInference,
+    retrospectiveService,
+    bridgePlugin,
   })
 
   const server = createServer(app as any)

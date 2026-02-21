@@ -198,21 +198,31 @@ export function createApp(options: { mock?: boolean; workspace?: string } = {}):
     })
   }
 
-  // POST /checkpoint
+  // POST /checkpoint — returns a full SerializedAgentState
   app.post('/checkpoint', (_req: Request, res: Response) => {
     if (state.runner === null) {
       res.status(404).json({ detail: 'No agent running' })
       return
     }
 
-    const sessionId = state.runner.handle.sessionId
-    res.json({
-      status: 'accepted',
+    const runner = state.runner
+    const nowIso = new Date().toISOString()
+    const serialized: SerializedAgentState = {
+      agentId: runner.agentId,
+      pluginName: runner.handle.pluginName,
+      sessionId: runner.handle.sessionId,
       checkpoint: {
         sdk: 'claude',
-        sessionId,
+        sessionId: runner.handle.sessionId,
       },
-    })
+      briefSnapshot: runner.brief,
+      pendingDecisionIds: [],
+      lastSequence: runner.lastSequence,
+      serializedAt: nowIso,
+      serializedBy: 'decision_checkpoint',
+      estimatedSizeBytes: 512,
+    }
+    res.json(serialized)
   })
 
   // POST /inject-context

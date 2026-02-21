@@ -271,8 +271,8 @@ export class KnowledgeStore {
   // ---------------------------------------------------------------------------
 
   /** Store or update an artifact from an ArtifactEvent. Caller-compatible with Phase 1. */
-  storeArtifact(event: ArtifactEvent): void {
-    this.upsertArtifactInternal(event)
+  storeArtifact(event: ArtifactEvent, tick?: number): void {
+    this.upsertArtifactInternal(event, undefined, tick)
   }
 
   /**
@@ -293,7 +293,7 @@ export class KnowledgeStore {
     this.upsertArtifactInternal(event, callerAgentId)
   }
 
-  private upsertArtifactInternal(event: ArtifactEvent, callerAgentId?: string): void {
+  private upsertArtifactInternal(event: ArtifactEvent, callerAgentId?: string, tick?: number): void {
     const existing = this.db.prepare('SELECT version FROM artifacts WHERE artifact_id = ?').get(event.artifactId) as { version: number } | undefined
     const newVersion = (existing?.version ?? 0) + 1
 
@@ -334,7 +334,8 @@ export class KnowledgeStore {
 
     this.bumpVersion()
     this.ensureWorkstream(event.workstream)
-    this.recordAudit('artifact', event.artifactId, existing ? 'update' : 'create', callerAgentId ?? event.agentId)
+    this.recordAudit('artifact', event.artifactId, existing ? 'update' : 'create', callerAgentId ?? event.agentId,
+      tick != null ? { tick, artifactId: event.artifactId } : undefined)
   }
 
   /** Get a stored artifact by ID, returned as ArtifactEvent shape. */
@@ -438,12 +439,12 @@ export class KnowledgeStore {
   // ---------------------------------------------------------------------------
 
   /** Store a coherence issue from a CoherenceEvent. */
-  storeCoherenceIssue(event: CoherenceEvent): void {
-    this.addCoherenceIssue(event)
+  storeCoherenceIssue(event: CoherenceEvent, tick?: number): void {
+    this.addCoherenceIssue(event, undefined, tick)
   }
 
   /** Add a coherence issue with optional caller tracking. */
-  addCoherenceIssue(event: CoherenceEvent, callerAgentId?: string): void {
+  addCoherenceIssue(event: CoherenceEvent, callerAgentId?: string, tick?: number): void {
     this.db.prepare(`
       INSERT INTO coherence_issues (issue_id, agent_id, title, description, category, severity, affected_workstreams_json, affected_artifact_ids_json, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
@@ -465,7 +466,8 @@ export class KnowledgeStore {
     )
 
     this.bumpVersion()
-    this.recordAudit('coherence_issue', event.issueId, 'create', callerAgentId ?? event.agentId)
+    this.recordAudit('coherence_issue', event.issueId, 'create', callerAgentId ?? event.agentId,
+      tick != null ? { tick, affectedArtifactIds: event.affectedArtifactIds } : undefined)
   }
 
   /** List coherence issues, optionally filtered by status. */

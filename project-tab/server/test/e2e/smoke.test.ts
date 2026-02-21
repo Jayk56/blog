@@ -147,6 +147,7 @@ async function bootServer(): Promise<SmokeTestServer> {
   const knowledgeStoreInterface: IKnowledgeStore = {
     async getSnapshot() { return knowledgeStore.getSnapshot(decisionQueue.listPending().map((q) => q.event)) },
     async appendEvent() {},
+    updateAgentStatus(agentId, status) { knowledgeStore.updateAgentStatus(agentId, status) },
   }
 
   const checkpointStore: CheckpointStore = {

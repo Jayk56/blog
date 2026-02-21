@@ -56,6 +56,7 @@ async function bootServer(deps: Partial<ApiRouteDeps> = {}) {
   const knowledgeStore = {
     async getSnapshot() { return emptySnapshot() },
     async appendEvent() {},
+    updateAgentStatus() {},
   }
 
   const checkpointStore: CheckpointStore = {

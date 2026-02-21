@@ -204,7 +204,7 @@ export interface GuardrailEvent {
 export interface LifecycleEvent {
   type: 'lifecycle'
   agentId: string
-  action: 'started' | 'paused' | 'resumed' | 'killed' | 'crashed' | 'session_start' | 'session_end'
+  action: 'started' | 'paused' | 'resumed' | 'killed' | 'crashed' | 'idle' | 'session_start' | 'session_end'
   reason?: string
 }
 

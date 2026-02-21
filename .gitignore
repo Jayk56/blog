@@ -84,5 +84,19 @@ editor/dist/
 # Codex CLI (contains API keys)
 .codex/
 
+# Project-tab experiment outputs (keep .gitkeep)
+project-tab/server/test/experiments/results/
+!project-tab/server/test/experiments/results/.gitkeep
+project-tab/server/test/experiments/cache/
+
+# Project-tab secrets
+project-tab/server/.env
+
+# Claude Code worktrees (ephemeral agent sandboxes)
+.claude/worktrees/
+
+# Claude Code agent sandboxes (decision gating hooks)
+.claude-agents/
+
 # macOS junk
 .DS_Store

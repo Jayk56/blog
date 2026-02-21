@@ -119,6 +119,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
   const knowledgeStore: KnowledgeStore = {
     async getSnapshot() { return emptySnapshot() },
     async appendEvent() {},
+    updateAgentStatus() {},
   }
 
   const checkpointStore: CheckpointStore = {

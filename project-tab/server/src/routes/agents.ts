@@ -57,7 +57,7 @@ export function createAgentsRouter(deps: AgentsDeps): Router {
       return
     }
 
-    const brief: AgentBrief = body.brief
+    const brief = body.brief as AgentBrief
     const pluginName = brief.modelPreference ?? deps.defaultPlugin ?? 'openai'
 
     deps.gateway.spawn(brief, pluginName).then(async (handle) => {
@@ -196,7 +196,7 @@ export function createAgentsRouter(deps: AgentsDeps): Router {
       return
     }
 
-    const changes: Partial<AgentBrief> = body
+    const changes = body as Partial<AgentBrief>
     plugin.updateBrief(handle, changes).then(() => {
       deps.contextInjection?.updateAgentBrief(handle.id, changes)
       deps.contextInjection?.onBriefUpdated(handle.id).catch(() => {
@@ -241,14 +241,14 @@ export function createAgentsRouter(deps: AgentsDeps): Router {
     // Merge new brief into checkpoint state for resume
     const resumeState: SerializedAgentState = {
       ...checkpoint.state,
-      briefSnapshot: body.brief,
+      briefSnapshot: body.brief as AgentBrief,
     }
 
     plugin.resume(resumeState).then((newHandle) => {
       deps.registry.updateHandle(handle.id, { status: 'running' })
       deps.knowledgeStore.updateAgentStatus(handle.id, 'running')
       clearIdleTracking(handle.id)
-      deps.contextInjection?.updateAgentBrief(handle.id, body.brief)
+      deps.contextInjection?.updateAgentBrief(handle.id, body.brief as Partial<AgentBrief>)
 
       res.status(200).json({ assigned: true, agentId: handle.id })
     }).catch((err: Error) => {
@@ -282,7 +282,7 @@ export function createAgentsRouter(deps: AgentsDeps): Router {
       pluginName: body.pluginName,
       sessionId: body.sessionId,
       checkpoint: body.checkpoint as SerializedAgentState['checkpoint'],
-      briefSnapshot: body.briefSnapshot,
+      briefSnapshot: body.briefSnapshot as AgentBrief,
       conversationSummary: body.conversationSummary,
       pendingDecisionIds: body.pendingDecisionIds,
       lastSequence: body.lastSequence,

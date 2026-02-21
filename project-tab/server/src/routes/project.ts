@@ -10,6 +10,7 @@ import type { AgentBrief } from '../types'
 import type { ArtifactEvent } from '../types/events'
 import type { BriefingService } from '../intelligence/briefing-service'
 import type { ConstraintInferenceService } from '../intelligence/constraint-inference-service'
+import type { RetrospectiveService } from '../intelligence/retrospective-service'
 
 const constraintFeedbackSchema = z.object({
   suggestionId: z.string().min(1),
@@ -17,7 +18,15 @@ const constraintFeedbackSchema = z.object({
   suggestionText: z.string().optional(),
 })
 
-type ProjectDeps = Pick<ApiRouteDeps, 'knowledgeStoreImpl' | 'decisionQueue' | 'trustEngine' | 'controlMode' | 'registry' | 'briefingService' | 'constraintInference'>
+const retrospectiveRequestSchema = z.object({
+  phaseLabel: z.string().min(1),
+  startTick: z.number().int().min(0),
+  endTick: z.number().int().min(0),
+  prevStartTick: z.number().int().min(0).optional(),
+  prevEndTick: z.number().int().min(0).optional(),
+})
+
+type ProjectDeps = Pick<ApiRouteDeps, 'knowledgeStoreImpl' | 'decisionQueue' | 'trustEngine' | 'controlMode' | 'registry' | 'briefingService' | 'constraintInference' | 'retrospectiveService'>
 
 export function createProjectRouter(deps: ProjectDeps): Router {
   const router = Router()
@@ -268,6 +277,36 @@ export function createProjectRouter(deps: ProjectDeps): Router {
     }
 
     res.json({ recorded: true, suggestionId: body.suggestionId, accepted: body.accepted })
+  })
+
+  // POST /api/project/retrospective
+  router.post('/retrospective', (req, res) => {
+    if (!deps.retrospectiveService) {
+      res.status(503).json({ error: 'Retrospective service not available' })
+      return
+    }
+
+    const body = parseBody(req, res, retrospectiveRequestSchema)
+    if (!body) return
+
+    if (body.endTick < body.startTick) {
+      res.status(400).json({ error: 'endTick must be >= startTick' })
+      return
+    }
+
+    if (body.prevStartTick != null && body.prevEndTick != null && body.prevEndTick < body.prevStartTick) {
+      res.status(400).json({ error: 'prevEndTick must be >= prevStartTick' })
+      return
+    }
+
+    const retro = deps.retrospectiveService.generateRetrospective(
+      body.phaseLabel,
+      body.startTick,
+      body.endTick,
+      body.prevStartTick,
+      body.prevEndTick,
+    )
+    res.json(retro)
   })
 
   return router

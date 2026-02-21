@@ -131,6 +131,7 @@ function createTestDeps(): {
     knowledgeStore: {
       async getSnapshot() { return emptySnapshot() },
       async appendEvent() {},
+      updateAgentStatus() {},
     },
     checkpointStore,
     gateway,

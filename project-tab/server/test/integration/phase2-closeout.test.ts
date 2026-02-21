@@ -588,6 +588,7 @@ describe('P2-7: ContextInjectionService Periodic + Reactive', () => {
     const knowledgeStore = {
       async getSnapshot() { return emptySnapshot() },
       async appendEvent() {},
+      updateAgentStatus() {},
     }
 
     const gateway: AgentGateway = {
@@ -629,6 +630,7 @@ describe('P2-7: ContextInjectionService Periodic + Reactive', () => {
     const knowledgeStore = {
       async getSnapshot() { return emptySnapshot() },
       async appendEvent() {},
+      updateAgentStatus() {},
     }
 
     const gateway: AgentGateway = {

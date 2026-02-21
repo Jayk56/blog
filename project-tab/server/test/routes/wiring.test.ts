@@ -165,6 +165,7 @@ function createTestDeps(): {
   const knowledgeStore: KnowledgeStore = {
     async getSnapshot() { return emptySnapshot() },
     async appendEvent() {},
+    updateAgentStatus() {},
   }
 
   const storedCheckpoints = new Map<string, any[]>()

@@ -92,6 +92,7 @@ function createTestDeps(): {
     knowledgeStore: {
       async getSnapshot() { return knowledgeStoreImpl.getSnapshot() },
       async appendEvent() {},
+      updateAgentStatus() {},
       storeArtifactContent(agentId: string, artifactId: string, content: string, mimeType?: string) {
         return knowledgeStoreImpl.storeArtifactContent(agentId, artifactId, content, mimeType)
       },

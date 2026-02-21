@@ -57,6 +57,7 @@ function createTestDeps(opts?: { withKnowledgeStoreImpl?: boolean }): {
   const knowledgeStore = {
     async getSnapshot() { return emptySnapshot() },
     async appendEvent() {},
+    updateAgentStatus() {},
   }
 
   const checkpointStore: CheckpointStore = {

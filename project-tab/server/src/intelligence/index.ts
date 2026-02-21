@@ -45,3 +45,30 @@ export type { InjectionRecord, SelfTuningConfig } from './context-injection-serv
 
 export { ConstraintInferenceService } from './constraint-inference-service'
 export type { ConstraintSuggestion, SuggestionConfidence, SuggestionSource, ConstraintInferenceStore } from './constraint-inference-service'
+
+export { RetrospectiveService } from './retrospective-service'
+export type {
+  PhaseRetrospective,
+  PhaseMetrics,
+  MetricsComparison,
+  PhaseInsight,
+  RetrospectiveStore,
+} from './retrospective-service'
+
+export { ReworkCausalLinker } from './rework-causal-linker'
+export type {
+  ReworkCausalReport,
+  ReworkCausalLink,
+  ReworkAggregate,
+  ReworkCause,
+  ReworkAnalysisStore,
+} from './rework-causal-linker'
+
+export { ControlModeROIService } from './control-mode-roi-service'
+export type {
+  ModeInterval,
+  PerModeMetrics,
+  ModeComparison,
+  ModeRecommendation as ROIModeRecommendation,
+  ControlModeROIReport,
+} from './control-mode-roi-service'

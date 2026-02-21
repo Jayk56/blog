@@ -100,6 +100,7 @@ function createFixture(mode: ControlMode = 'adaptive', withAuditLog = true): Tes
   const knowledgeStore: KnowledgeStore = {
     getSnapshot: vi.fn().mockImplementation(async () => makeSnapshot(snapshotVersion++)),
     appendEvent: vi.fn().mockResolvedValue(undefined),
+    updateAgentStatus: vi.fn(),
     ...(withAuditLog ? { appendAuditLog } : {}),
   }
 

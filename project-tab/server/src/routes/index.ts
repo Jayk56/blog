@@ -10,6 +10,7 @@ import type { KnowledgeStore as KnowledgeStoreClass } from '../intelligence/know
 import type { BriefingService } from '../intelligence/briefing-service'
 import type { CoherenceMonitor } from '../intelligence/coherence-monitor'
 import type { ConstraintInferenceService } from '../intelligence/constraint-inference-service'
+import type { RetrospectiveService } from '../intelligence/retrospective-service'
 import type { RecoveryResult } from '../gateway/volume-recovery'
 import type { TrustEngine } from '../intelligence/trust-engine'
 import type { DecisionQueue } from '../intelligence/decision-queue'
@@ -35,7 +36,9 @@ import { createToolGateRouter } from './tool-gate'
 import { createTrustRouter } from './trust'
 import { createInsightsRouter } from './insights'
 import { createCoherenceRouter } from './coherence'
+import { createBridgeRouter } from './bridge'
 import type { TokenService } from '../gateway/token-service'
+import type { TeamsBridgePlugin } from '../gateway/teams-bridge-plugin'
 export type { AgentRegistry, ArtifactUploadResult, KnowledgeStore, AgentGateway, CheckpointStore, ControlModeManager } from '../types/service-interfaces'
 
 /** Dependencies required by API route modules. */
@@ -70,6 +73,10 @@ export interface ApiRouteDeps {
   coherenceMonitor?: CoherenceMonitor
   /** Constraint inference service for suggesting constraints from audit patterns. */
   constraintInference?: ConstraintInferenceService
+  /** Retrospective service for generating phase retrospectives. */
+  retrospectiveService?: RetrospectiveService
+  /** Teams bridge plugin for Agent Teams integration. */
+  bridgePlugin?: TeamsBridgePlugin
 }
 
 /**
@@ -125,6 +132,9 @@ export function createApiRouter(deps: ApiRouteDeps): Router {
   router.use('/insights', createInsightsRouter(deps))
   if (deps.coherenceMonitor) {
     router.use('/coherence', createCoherenceRouter({ coherenceMonitor: deps.coherenceMonitor }))
+  }
+  if (deps.bridgePlugin) {
+    router.use('/bridge', createBridgeRouter({ ...deps, bridgePlugin: deps.bridgePlugin }))
   }
 
   return router

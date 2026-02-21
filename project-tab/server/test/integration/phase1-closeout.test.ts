@@ -1036,6 +1036,7 @@ function createMinimalDeps(knowledgeStore: KnowledgeStore) {
     knowledgeStore: {
       async getSnapshot() { return knowledgeStore.getSnapshot() },
       async appendEvent() {},
+      updateAgentStatus() {},
       storeArtifactContent(agentId: string, artifactId: string, content: string, mimeType?: string) {
         return knowledgeStore.storeArtifactContent(agentId, artifactId, content, mimeType)
       },
