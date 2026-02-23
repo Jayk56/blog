@@ -659,4 +659,102 @@ The air traffic control analogy from earlier still holds, but I'd update it: the
 
 That's the thing I'd want to build.
 
+## What We Learned Building It
+
+So we built it. Not the whole thing — but enough of it to discover that the design above has a structural blind spot.
+
+Everything I wrote above treats the Project tab as a self-contained environment. Maya opens it Monday morning and *stays there* — reviewing, deciding, approving. The agents work somewhere offscreen and their results flow in. The human never leaves the control room.
+
+That's not how it actually works.
+
+When I sat down in front of the running prototype — decision queue, coherence monitor, trust trajectories, the whole control plane — I had a working system that could tell me the state of the project. But when I wanted to *act* on what I saw, I kept reaching for something the Project tab didn't have. The coherence monitor flags a schema conflict between two agents' outputs. Great. Now I need to go *look at the code*. The decision queue surfaces a design question an agent couldn't resolve. I need to *think through the architecture* — probably in a conversation, not by clicking a "resolve" button. An agent finishes a workstream and I want to review the implementation. I need a code session, not an artifact viewer.
+
+The Project tab kept showing me *what needed attention* and then leaving me with no way to act on it without switching to a completely different tool and manually reconstructing the context.
+
+This revealed something the original design missed: the Project tab is not where work happens. It's not even where most decisions happen. It's where you *orient* — and then dispatch.
+
+### Three Layers, Not One
+
+The architecture that actually wants to exist has three layers:
+
+**Layer 1: Project State.** This is the persistent shared context — goals, constraints, workstreams, artifacts, decisions, coherence issues, trust scores. Everything the original design describes. This layer is the institutional memory. It exists whether or not anyone is looking at it, and it accumulates over time.
+
+**Layer 2: Sessions.** These are the ephemeral execution contexts where actual work gets done. Some are human-driven: you open a Code session to implement a feature, a Cowork session to collaborate on a design document, a chat to quickly ask a question. Some are agent-driven: an agent is spawned to execute a workstream, runs in a sandboxed environment, produces artifacts and decisions, and eventually completes or gets stuck. Sessions start, do work, and end. Their outputs flow back into Project State.
+
+**Layer 3: Routing Intelligence.** This is the proactive layer that watches Project State and figures out what should happen next. It's the thing that says "the coherence monitor found a schema conflict — this needs a Code session with both schemas loaded" or "the agent finished the trust hardening workstream — here's a review session with the diff and test results pre-loaded" or "nothing urgent needs you, but here are three workstreams that could start — want to assign agents or take one yourself?"
+
+The original design is a thorough treatment of Layer 1 with some hints of Layer 3 (control shift recommendations, trust calibration). It doesn't acknowledge that Layer 2 exists at all.
+
+### Why This Matters
+
+This isn't just an architectural distinction — it changes the fundamental UX model.
+
+In the original design, the human's workflow is: **open Project tab → review → decide → approve → repeat.** The Project tab is a dashboard with decision buttons.
+
+In the revised model, the human's workflow is: **open Project tab → orient → dispatch → execute elsewhere → results flow back.** The Project tab is a switchboard.
+
+The difference matters because it answers the question I kept running into while using the prototype: "okay, I see the problem — now what?" In the original model, the answer is "click the button in the Project tab." In the revised model, the answer is "the Project tab opens the right session with the right context, and you go do the work there."
+
+Think about how you actually use tools today. When you're deep in Claude Code fixing a bug, you're not thinking about project state — you're thinking about the code. When you're in Cowork hashing out a design, you're not checking the coherence monitor — you're reasoning about architecture. The value of the Project tab isn't that it replaces those focused execution contexts. It's that it *connects* them. It's the thing that knows "you just finished the implementation session, and based on what changed, here are the two things that need attention next."
+
+### User Sessions and Agent Sessions
+
+The session layer has two types, and the distinction matters more than I initially realized.
+
+**User Sessions** are human-driven. You're at the controls. The AI is assisting — suggesting, generating, reviewing — but you're directing the conversation. A Claude Code session where you're implementing a feature. A Cowork session where you're refining a design document. A chat where you're asking a quick question about the codebase. These are *your* sessions, running at your pace, following your judgment.
+
+**Agent Sessions** are LLM-driven. The agent is at the controls. It has a brief, constraints, a workstream assignment, and it goes. It writes code, runs tests, produces artifacts. When it hits something it can't resolve — a design decision, a conflict with another agent's work, a constraint it doesn't understand — it pushes a decision into the Project State queue and keeps working on other things (or waits, depending on the control mode). When it finishes, its outputs flow back into Project State for human review or for other agents to build on.
+
+The Project tab is the *interface between these two session types*. It's where:
+
+- Agent sessions report back ("I finished the trust hardening workstream, here's what I produced, here are two decisions I need from you")
+- User sessions get dispatched ("you need to review this coherence issue — here's a Code session with the relevant files loaded")
+- The human chooses what to do themselves vs. what to delegate ("I'll take the architecture decision in a Cowork session, assign an agent to write the migration tests")
+
+This is the collaboration protocol between human and agents. Not real-time pair programming, not async ticket assignment — something in between. The human sets direction through the brief, agents execute in their sessions, results accumulate in Project State, the routing intelligence identifies what needs attention, and the human either handles it themselves or dispatches another agent.
+
+### What the Prototype Got Right
+
+The control plane works. The orchestrator-to-ecosystem spectrum, trust scoring with calibration profiles, three-layer coherence monitoring, the emergency brake, context injection — these are all implemented and functional. The decision queue correctly surfaces where agents are blocked. The brief editor lets you define constraints that get injected into agent context. The control topology visualization is the ASCII chart from this post rendered as interactive sliders.
+
+The data model for Project State is solid: workstreams, artifacts with provenance, decisions with resolution history, audit logs that capture every trust outcome and override. The WebSocket event bus pushes real-time updates. The adapter shim protocol means agents can be backed by different LLM providers.
+
+These are the bones of Layer 1, and they hold up.
+
+### What the Prototype Is Missing
+
+**The session layer doesn't exist.** The system can spawn agents through adapter shims, but there's no concept of "open a Code session pre-loaded with context from this coherence issue." The boundary between the Project tab and execution tools is a manual alt-tab.
+
+**Nothing is proactive.** The system waits for you to look at it. Four analytics endpoints exist on the backend — override pattern analysis, injection efficiency metrics, rework causal linking, control mode ROI measurement — but nothing calls them automatically and nothing acts on their results. The constraint inference service can suggest new constraints based on observed override patterns, but only when you click the button. The blog envisioned a system that says "your rework rate dropped, consider loosening to ecosystem mode." The prototype has the math but not the trigger.
+
+**The sensemaking layer is a stub.** The blog's vision of comprehension summaries — three paragraphs that tell you what happened, what decisions were made, what's blocked, what needs attention — requires an LLM key to generate anything at all, and even then it's a one-shot generation rather than a living narrative that updates as work flows. The Knowledge tab in the Map workspace is blank. There's no knowledge graph, no cross-context pattern detection, no emergent behavior identification. This is the gap that matters most: the features that would make the Project tab useful as an orientation surface rather than a status dashboard.
+
+**The debrief loop is missing.** When you come back to the project after being away, there's no synthesized "here's what changed and what needs you." The Briefing workspace shows a template sentence and "no activity recorded yet." The blog's Maya opens the Project tab Monday morning and immediately sees what her agents did over the weekend. The prototype's Maya opens the Project tab and sees... a coherence score.
+
+### The Revised Mental Model
+
+If I were rewriting the "Where This Goes" section today, the magic wand list would look different:
+
+1. You define intent at the project level through the brief — goals, constraints, checkpoints, control mode *(this exists)*
+2. The system decomposes that into workstreams *(this exists)*
+3. Agents execute in their own sessions, producing artifacts and surfacing decisions *(the plumbing exists, the session management doesn't)*
+4. The project maintains a living understanding of state — synthesized narratives, not just data *(the data exists, the synthesis doesn't)*
+5. When you sit down, the project orients you — here's what happened, here's what matters, here's what needs you *(not built)*
+6. When you decide to act, the project routes you to the right session type with the right context pre-loaded *(not built)*
+7. When a session completes — yours or an agent's — the results flow back automatically and the project re-evaluates what needs attention next *(partially built — agent artifacts flow back, but there's no re-evaluation loop)*
+
+The air traffic control analogy from the original design still holds, but I'd sharpen it. The Project tab isn't the control tower's radar screen — it's the *controller*. The radar screen (status display) is the least interesting part. The interesting part is the controller deciding which planes need attention, which can fly on autopilot, and what radio frequency to use to talk to each one. The Project tab's job is routing, not rendering.
+
+### What Organization Theory Says About This
+
+Going back to the frameworks from the beginning of this post, the three-layer model maps cleanly:
+
+**Galbraith's information processing view** predicted this. He argued that as task uncertainty increases, organizations need more information processing capacity — either by reducing the need for information (slack resources, self-contained tasks) or by increasing the capacity to process it (lateral relations, vertical information systems). The Project State layer is the vertical information system. Sessions are the self-contained tasks. Routing Intelligence is the lateral relations — the thing that connects the self-contained units when they need to coordinate.
+
+**Weick's sensemaking** explains why the debrief surface matters so much. Sensemaking is retrospective — you understand what happened after it happened. The Project tab's primary value isn't real-time monitoring of agent work (you can't absorb that anyway). It's *retrospective synthesis* — when you come back, it tells you the story of what happened in a way that lets you make good decisions about what happens next. This is what comprehension summaries are really for: Weick's sensemaking at machine speed.
+
+**Thompson's interdependence types** apply to sessions, not just tasks. User sessions and agent sessions have *reciprocal interdependence* — the output of one changes the direction of the other. This is the hardest kind of interdependence to manage, and Thompson said it requires mutual adjustment (real-time communication, not plans and schedules). The Project State layer is the mutual adjustment mechanism — it's the shared context through which sessions influence each other without needing to talk directly.
+
+This is what I think the original design was reaching toward but couldn't articulate because it was still thinking in terms of a single tool. The Project tab isn't a PM tool. It's a *coordination protocol* for human-agent collaboration, and the features in the original design are components of that protocol — not screens in an application.
+
 \[to be continued\]
